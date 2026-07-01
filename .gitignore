@@ -1,0 +1,7 @@
+.env
+ombor.db
+.bot.lock
+__pycache__/
+*.pyc
+.venv/
+venv/
