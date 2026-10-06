@@ -27,6 +27,15 @@ WEBAPP_ORIGINS = [
   for origin in os.getenv("WEBAPP_ORIGINS", "").split(",")
   if origin.strip()
 ]
+# Vercel preview/prod domenlarini avtomatik qo'shish (CORS)
+_extra_origins = os.getenv("WEBAPP_EXTRA_ORIGINS", "").strip()
+if _extra_origins:
+  WEBAPP_ORIGINS.extend(
+    origin.strip().rstrip("/")
+    for origin in _extra_origins.split(",")
+    if origin.strip()
+  )
+# Bo'sh bo'lsa CORSMiddleware ["*"] ishlatadi (WEBAPP_ORIGINS or ["*"])
 # Brauzerda (Telegram tashqarisida) lokal test uchun. Productionda o'chiring.
 TMA_DEV_MODE = os.getenv("TMA_DEV_MODE", "").strip().lower() in {
   "1",
