@@ -7,10 +7,9 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from config import BOT_TOKEN, DEFAULT_PRODUCTS
-from db import cleanup_bad_products, fix_wrong_kirim, init_db
-from handlers import admin, common, start, stock
-from utils.middleware import AdminFlowGuard, StockFlowGuard
+from config import BOT_TOKEN, DEFAULT_PRODUCTS, SUPABASE_KEY, SUPABASE_URL
+from handlers import admin, client, common
+from supabase_db import init_db
 from utils.placeholders import ensure_product_images
 from utils.singleton import acquire_singleton, release_singleton
 
@@ -23,15 +22,17 @@ async def main() -> None:
     logger.error("BOT_TOKEN .env faylida ko'rsatilmagan!")
     sys.exit(1)
 
+  if not SUPABASE_URL or not SUPABASE_KEY:
+    logger.error(
+      "SUPABASE_URL yoki SUPABASE_ANON_KEY .env faylida ko'rsatilmagan!"
+    )
+    sys.exit(1)
+
   acquire_singleton()
 
   try:
+    logger.info("Supabase API ga ulanilmoqda...")
     init_db(DEFAULT_PRODUCTS)
-    removed = cleanup_bad_products({p["name"] for p in DEFAULT_PRODUCTS})
-    if removed:
-      logger.info("Noto'g'ri mahsulotlar o'chirildi: %s ta", removed)
-    if fix_wrong_kirim("Bloknot", 2000):
-      logger.info("Bloknot noto'g'ri qoldig'i tuzatildi")
     ensure_product_images(DEFAULT_PRODUCTS)
 
     bot = Bot(
@@ -40,17 +41,12 @@ async def main() -> None:
     )
     dp = Dispatcher(storage=MemoryStorage())
 
-    stock.router.message.middleware(AdminFlowGuard())
-    stock.router.callback_query.middleware(AdminFlowGuard())
-    admin.router.message.middleware(StockFlowGuard())
-    admin.router.callback_query.middleware(StockFlowGuard())
-
+    # Tartib muhim: avval admin (filtrlangan), keyin mijoz, oxirida common
     dp.include_router(admin.router)
-    dp.include_router(stock.router)
-    dp.include_router(start.router)
+    dp.include_router(client.router)
     dp.include_router(common.router)
 
-    logger.info("TATU Ombor boti ishga tushmoqda...")
+    logger.info("TATU Brend Do'kon boti ishga tushmoqda...")
     await dp.start_polling(bot, drop_pending_updates=True)
   finally:
     release_singleton()

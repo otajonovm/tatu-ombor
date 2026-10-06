@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+webapp/node_modules/
+webapp/dist/
+webapp/.env

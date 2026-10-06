@@ -1,12 +1,23 @@
 from aiogram.fsm.state import State, StatesGroup
 
 
-class StockStates(StatesGroup):
+class OrderStates(StatesGroup):
   waiting_quantity = State()
-  waiting_recipient = State()
+  waiting_phone = State()
 
 
-class AdminStates(StatesGroup):
-  waiting_product_name = State()
-  waiting_product_quantity = State()
-  waiting_product_image = State()
+class AdminProductStates(StatesGroup):
+  waiting_name = State()
+  waiting_description = State()
+  waiting_price = State()
+  waiting_quantity = State()
+  waiting_image = State()
+
+
+class AdminStockStates(StatesGroup):
+  waiting_quantity = State()
+  waiting_comment = State()
+
+
+class AdminEditStates(StatesGroup):
+  waiting_price = State()

@@ -1,0 +1,187 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  color: var(--tg-text, #172033);
+  background: var(--tg-bg, #f6f7fb);
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--tg-bg, #f6f7fb);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer components {
+  .icon-button {
+    @apply relative grid h-10 w-10 place-items-center rounded-2xl bg-[var(--tg-secondary-bg)] text-[var(--tg-text)] shadow-sm transition active:scale-95;
+  }
+
+  .cart-badge {
+    @apply absolute -right-1 -top-1 grid min-h-5 min-w-5 place-items-center rounded-full bg-brand px-1 text-[10px] font-black text-white;
+  }
+
+  .input {
+    @apply w-full rounded-2xl border border-slate-200/80 bg-[var(--tg-secondary-bg)] px-4 py-3 text-sm outline-none transition placeholder:text-[var(--tg-hint)] focus:border-brand focus:ring-4 focus:ring-brand/10;
+  }
+
+  .chip {
+    @apply rounded-full bg-[var(--tg-secondary-bg)] px-4 py-2 text-sm font-semibold text-[var(--tg-hint)] shadow-sm transition active:scale-95;
+  }
+
+  .chip-active {
+    @apply bg-brand text-white shadow-brand;
+  }
+
+  .product-card {
+    @apply overflow-hidden rounded-3xl bg-[var(--tg-secondary-bg)] shadow-soft transition active:scale-[.98];
+  }
+
+  .product-image {
+    @apply relative flex h-44 items-center justify-center overflow-hidden bg-gradient-to-br from-blue-50 to-indigo-100;
+  }
+
+  .product-image.large {
+    @apply h-64 rounded-t-3xl;
+  }
+
+  .product-image img {
+    @apply h-full w-full object-cover;
+  }
+
+  .stock-pill {
+    @apply absolute bottom-2 right-2 rounded-full bg-white/90 px-2 py-1 text-[10px] font-bold text-slate-700 shadow-sm;
+  }
+
+  .primary-button,
+  .secondary-button,
+  .success-button,
+  .danger-button {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-extrabold transition active:scale-[.98] disabled:cursor-wait disabled:opacity-60;
+  }
+
+  .primary-button {
+    @apply bg-brand text-white shadow-lg shadow-brand/20;
+  }
+
+  .secondary-button {
+    @apply bg-slate-100 text-slate-700;
+  }
+
+  .success-button {
+    @apply bg-emerald-500 text-white;
+  }
+
+  .danger-button {
+    @apply bg-red-50 text-red-600;
+  }
+
+  .section-title {
+    @apply text-2xl font-black;
+  }
+
+  .subheading {
+    @apply mb-3 text-lg font-black;
+  }
+
+  .panel,
+  .order-card,
+  .admin-product {
+    @apply rounded-3xl bg-[var(--tg-secondary-bg)] p-4 shadow-soft;
+  }
+
+  .admin-product {
+    @apply mb-2 flex items-center justify-between;
+  }
+
+  .status-pill {
+    @apply rounded-full px-3 py-1 text-xs font-bold;
+  }
+
+  .status-pending {
+    @apply bg-amber-100 text-amber-700;
+  }
+
+  .status-approved {
+    @apply bg-emerald-100 text-emerald-700;
+  }
+
+  .status-rejected {
+    @apply bg-red-100 text-red-700;
+  }
+
+  .empty-state {
+    @apply rounded-3xl bg-[var(--tg-secondary-bg)] p-8 text-center text-sm text-[var(--tg-hint)] shadow-soft;
+  }
+
+  .skeleton {
+    @apply animate-pulse rounded-3xl bg-slate-200;
+  }
+
+  .bottom-nav {
+    @apply fixed bottom-0 left-1/2 z-20 flex w-full max-w-2xl -translate-x-1/2 justify-around border-t border-slate-200/80 bg-[var(--tg-secondary-bg)] px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl;
+  }
+
+  .bottom-nav button {
+    @apply flex min-w-20 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[10px] font-bold text-[var(--tg-hint)] transition;
+  }
+
+  .bottom-nav .nav-active {
+    @apply bg-brand/10 text-brand;
+  }
+
+  .modal-backdrop {
+    @apply fixed inset-0 z-40 flex items-end justify-center bg-slate-950/40 p-3 backdrop-blur-sm sm:items-center;
+  }
+
+  .modal-card {
+    @apply relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-[2rem] bg-[var(--tg-bg)] shadow-2xl;
+  }
+
+  .modal-close {
+    @apply absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-slate-700 shadow;
+  }
+
+  .cart-line {
+    @apply flex items-center gap-3 border-b border-slate-200/70 py-3;
+  }
+
+  .quantity-button {
+    @apply grid h-8 w-8 place-items-center rounded-xl bg-slate-100 text-slate-700 transition active:scale-90;
+  }
+
+  .floating-back {
+    @apply fixed bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-xl;
+  }
+
+  .toast {
+    @apply fixed left-1/2 top-5 z-50 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white shadow-xl;
+  }
+}
+
+.hide-scrollbar {
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
