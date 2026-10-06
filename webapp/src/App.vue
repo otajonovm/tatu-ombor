@@ -392,9 +392,16 @@ onMounted(async () => {
   <main class="min-h-screen pb-8">
     <header class="sticky top-0 z-20 border-b border-slate-200/70 bg-[var(--tg-bg)]/90 px-4 pb-3 pt-[max(14px,env(safe-area-inset-top))] backdrop-blur-xl">
       <div class="mx-auto flex max-w-2xl items-center justify-between">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-brand">TATU</p>
-          <h1 class="text-xl font-extrabold tracking-tight">Brend Do‘koni</h1>
+        <div class="flex items-center gap-3">
+          <img
+            class="h-12 w-12 rounded-full bg-white object-contain p-0.5 shadow-sm"
+            src="/tatu-logo.png"
+            alt="TATU logotipi"
+          />
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-brand">TATU</p>
+            <h1 class="text-xl font-extrabold tracking-tight">Brend Do‘koni</h1>
+          </div>
         </div>
         <div class="flex items-center gap-2">
           <button class="icon-button" title="Savat" @click="openCart">
