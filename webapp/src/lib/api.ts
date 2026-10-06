@@ -17,10 +17,19 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const response = await fetch(`${baseUrl}${path}`, { ...options, headers })
   const payload = (await response.json().catch(() => null)) as
-    | { detail?: string }
+    | { detail?: string | Array<{ msg?: string; loc?: unknown[] }> }
     | null
   if (!response.ok) {
-    throw new Error(payload?.detail || 'Server bilan aloqa xatosi.')
+    const detail = payload?.detail
+    if (typeof detail === 'string') {
+      throw new Error(detail)
+    }
+    if (Array.isArray(detail) && detail.length) {
+      const first = detail[0]
+      const msg = first?.msg || 'Maʼlumotlar notoʻgʻri.'
+      throw new Error(msg)
+    }
+    throw new Error('Server bilan aloqa xatosi.')
   }
   return payload as T
 }
@@ -114,10 +123,18 @@ export function rejectOrder(id: number) {
 }
 
 export function cartPayload(lines: CartLine[]) {
-  return lines.map((line) => ({
-    product_id: line.product.id,
-    quantity: line.quantity,
-    size: line.size,
-    color: line.color,
-  }))
+  return lines.map((line) => {
+    const item: {
+      product_id: number
+      quantity: number
+      size?: string
+      color?: string
+    } = {
+      product_id: line.product.id,
+      quantity: line.quantity,
+    }
+    if (line.size) item.size = line.size
+    if (line.color) item.color = line.color
+    return item
+  })
 }

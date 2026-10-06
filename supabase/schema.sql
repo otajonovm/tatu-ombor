@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS orders (
   comment      TEXT NOT NULL DEFAULT '',
   total_price  INTEGER NOT NULL DEFAULT 0 CHECK (total_price >= 0),
   status       TEXT NOT NULL DEFAULT 'pending'
-                 CHECK (status IN ('pending', 'approved', 'rejected')),
+                 CHECK (status IN ('pending', 'paid', 'approved', 'rejected')),
+  payment_charge_id TEXT,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -63,9 +64,22 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'su
 ALTER TABLE products ADD COLUMN IF NOT EXISTS sizes JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS colors JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS comment TEXT NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_charge_id TEXT;
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS size TEXT;
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS color TEXT;
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+
+-- Telegram Payments: paid status
+DO $$
+BEGIN
+  ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+  ALTER TABLE orders
+    ADD CONSTRAINT orders_status_check
+    CHECK (status IN ('pending', 'paid', 'approved', 'rejected'));
+EXCEPTION
+  WHEN others THEN
+    NULL;
+END $$;
 
 -- REST API orqali atomik amallar (supabase-py RPC)
 
@@ -313,6 +327,110 @@ BEGIN
 END;
 $$;
 
+-- Telegram Payments muvaffaqiyatli to'lov: status=paid + ombor kamaytirish
+CREATE OR REPLACE FUNCTION shop_mark_order_paid(
+  p_order_id INTEGER,
+  p_payment_charge_id TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_order orders%ROWTYPE;
+  v_item RECORD;
+  v_product products%ROWTYPE;
+BEGIN
+  SELECT * INTO v_order
+  FROM orders
+  WHERE id = p_order_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', FALSE, 'message', 'Buyurtma topilmadi.');
+  END IF;
+
+  IF v_order.status = 'paid' THEN
+    RETURN jsonb_build_object(
+      'ok', TRUE,
+      'message', 'Buyurtma allaqachon to''langan.',
+      'order', to_jsonb(v_order)
+    );
+  END IF;
+
+  IF v_order.status <> 'pending' THEN
+    RETURN jsonb_build_object(
+      'ok', FALSE,
+      'message', 'Bu buyurtma uchun to''lov qabul qilinmaydi.'
+    );
+  END IF;
+
+  FOR v_item IN
+    SELECT oi.product_id, oi.quantity, p.name, p.is_active
+    FROM order_items oi
+    JOIN products p ON p.id = oi.product_id
+    WHERE oi.order_id = p_order_id
+  LOOP
+    SELECT * INTO v_product
+    FROM products
+    WHERE id = v_item.product_id
+    FOR UPDATE;
+
+    IF NOT v_product.is_active THEN
+      RETURN jsonb_build_object(
+        'ok', FALSE,
+        'message', format('«%s» sotuvda emas.', v_item.name)
+      );
+    END IF;
+
+    IF v_product.quantity < v_item.quantity THEN
+      RETURN jsonb_build_object(
+        'ok', FALSE,
+        'message', format(
+          '«%s» uchun qoldiq yetarli emas (%s/%s).',
+          v_item.name, v_product.quantity, v_item.quantity
+        )
+      );
+    END IF;
+  END LOOP;
+
+  FOR v_item IN
+    SELECT product_id, quantity
+    FROM order_items
+    WHERE order_id = p_order_id
+  LOOP
+    UPDATE products
+    SET quantity = quantity - v_item.quantity
+    WHERE id = v_item.product_id;
+
+    INSERT INTO transactions (
+      product_id, type, quantity, admin_id, comment
+    )
+    VALUES (
+      v_item.product_id,
+      'sotuv',
+      v_item.quantity,
+      NULL,
+      format('Click to''lov · buyurtma #%s', p_order_id)
+    );
+  END LOOP;
+
+  UPDATE orders
+  SET
+    status = 'paid',
+    payment_charge_id = COALESCE(p_payment_charge_id, payment_charge_id)
+  WHERE id = p_order_id
+  RETURNING * INTO v_order;
+
+  RETURN jsonb_build_object(
+    'ok', TRUE,
+    'message', 'To''lov qabul qilindi.',
+    'order', to_jsonb(v_order)
+  );
+END;
+$$;
+
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON products, orders, order_items, transactions
   TO anon, authenticated;
@@ -327,6 +445,8 @@ GRANT EXECUTE ON FUNCTION shop_create_order(BIGINT, TEXT, TEXT, JSONB, TEXT)
 GRANT EXECUTE ON FUNCTION shop_approve_order(INTEGER, BIGINT)
   TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION shop_reject_order(INTEGER)
+  TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION shop_mark_order_paid(INTEGER, TEXT)
   TO anon, authenticated;
 
 -- Bot Telegram orqali o'z autentifikatsiyasini tekshiradi. Anon key bilan

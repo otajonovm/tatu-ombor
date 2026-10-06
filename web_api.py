@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from config import ADMIN_IDS, BOT_TOKEN, WEBAPI_URL, WEBAPP_ORIGINS
+from config import ADMIN_IDS, BOT_TOKEN, TMA_DEV_MODE, WEBAPI_URL, WEBAPP_ORIGINS
 from supabase_db import (
   add_product,
   approve_order,
@@ -141,7 +141,21 @@ def validate_telegram_init_data(
 def telegram_user(
   x_telegram_init_data: str | None = Header(default=None),
 ) -> TelegramUser:
-  return validate_telegram_init_data(x_telegram_init_data or "")
+  init_data = (x_telegram_init_data or "").strip()
+  if not init_data and TMA_DEV_MODE:
+    # localhost Vite/brauzer: Telegram WebApp initData bo'lmaydi.
+    admin_id = ADMIN_IDS[0] if ADMIN_IDS else 1
+    logger.warning(
+      "TMA_DEV_MODE: initData yo'q — mock user id=%s ishlatilmoqda.",
+      admin_id,
+    )
+    return TelegramUser(
+      id=admin_id,
+      first_name="Dev",
+      last_name="Admin",
+      username="dev_admin",
+    )
+  return validate_telegram_init_data(init_data)
 
 
 def admin_user(user: TelegramUser = Depends(telegram_user)) -> TelegramUser:
@@ -189,12 +203,26 @@ class OrderInput(BaseModel):
   @field_validator("phone_number")
   @classmethod
   def validate_phone(cls, value: str) -> str:
+    cleaned = value.strip()
     allowed = set("0123456789+ ()-")
-    if any(char not in allowed for char in value):
-      raise ValueError("Telefon raqam noto'g'ri.")
-    if sum(char.isdigit() for char in value) < 9:
-      raise ValueError("Telefon raqam noto'g'ri.")
-    return value.strip()
+    if not cleaned or any(char not in allowed for char in cleaned):
+      raise ValueError("Telefon raqam noto'g'ri. Masalan: +998901234567")
+    digits = "".join(char for char in cleaned if char.isdigit())
+    if len(digits) < 9:
+      raise ValueError("Telefon raqamda kamida 9 ta raqam bo'lsin.")
+    return cleaned
+
+  @field_validator("items")
+  @classmethod
+  def clean_items(cls, value: list[OrderItemInput]) -> list[OrderItemInput]:
+    cleaned: list[OrderItemInput] = []
+    for item in value:
+      size = (item.size or "").strip() or None
+      color = (item.color or "").strip() or None
+      cleaned.append(
+        item.model_copy(update={"size": size, "color": color})
+      )
+    return cleaned
 
 
 class ProductInput(BaseModel):

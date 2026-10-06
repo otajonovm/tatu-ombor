@@ -1,6 +1,8 @@
+import logging
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, FSInputFile, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, FSInputFile, Message
 
 from config import ORDER_STATUS_LABELS, TX_TYPE_LABELS
 from supabase_db import (
@@ -30,13 +32,17 @@ from keyboards import (
   admin_order_actions_keyboard,
   admin_orders_keyboard,
   admin_products_keyboard,
+  admin_qr_keyboard,
   admin_reply_keyboard,
   cancel_reply_keyboard,
 )
+from services.qr import build_product_qr_png, product_deep_link
 from states import AdminEditStates, AdminProductStates, AdminStockStates
 from utils.files import IMAGES_DIR, save_telegram_photo
 from utils.media import replace_with_text, send_product_card
 from utils.middleware import AdminSecurityMiddleware
+
+logger = logging.getLogger(__name__)
 
 router = Router(name="admin")
 router.message.filter(IsAdminFilter())
@@ -133,6 +139,12 @@ async def add_image(message: Message, state: FSMContext) -> None:
   photo = message.photo[-1]
   try:
     image_path = await save_telegram_photo(message.bot, photo.file_id, name)
+  except Exception as error:
+    logger.exception("Rasm yuklab olinmadi: %s", error)
+    await message.answer("❌ Rasm saqlanmadi. Qayta yuboring:")
+    return
+
+  try:
     product = add_product(
       name=name,
       description=data.get("description", ""),
@@ -141,8 +153,12 @@ async def add_image(message: Message, state: FSMContext) -> None:
       image_url=image_path,
       admin_id=message.from_user.id,
     )
-  except Exception:
-    await message.answer("❌ Rasm saqlanmadi. Qayta yuboring:")
+  except Exception as error:
+    logger.exception("Mahsulot qo'shilmadi: %s", error)
+    await message.answer(
+      "❌ Mahsulot bazaga yozilmadi. Qayta urinib ko'ring yoki "
+      "supabase/schema.sql ni yangilang."
+    )
     return
 
   await state.clear()
@@ -154,8 +170,41 @@ async def add_image(message: Message, state: FSMContext) -> None:
       f"💰 {format_price(product['price'])}\n"
       f"📦 {product['quantity']} dona"
     ),
+    reply_markup=admin_qr_keyboard(int(product["id"])),
+  )
+  await message.answer(
+    "Admin menyu.",
     reply_markup=admin_reply_keyboard(),
   )
+
+
+@router.callback_query(F.data.startswith("admin:qr:"))
+async def generate_product_qr(callback: CallbackQuery) -> None:
+  product_id = int(callback.data.split(":")[2])
+  product = get_product(product_id)
+  if not product:
+    await callback.answer("Mahsulot topilmadi.", show_alert=True)
+    return
+
+  await callback.answer("QR tayyorlanmoqda...")
+  try:
+    me = await callback.bot.get_me()
+    username = me.username or None
+    png = build_product_qr_png(product_id, username)
+    link = product_deep_link(product_id, username)
+    caption = (
+      f"📦 Mahsulot: <b>{product['name']}</b>\n"
+      f"Narxi: {format_price(product['price'])}\n"
+      f"🔗 <code>{link}</code>\n\n"
+      "Ushbu QR kodni chop etib tovar ustiga yopishtirishingiz mumkin."
+    )
+    await callback.message.answer_photo(
+      photo=BufferedInputFile(png.getvalue(), filename=png.name),
+      caption=caption,
+    )
+  except Exception as error:
+    logger.exception("QR yaratilmadi: %s", error)
+    await callback.message.answer(f"❌ QR kod yaratilmadi: {error}")
 
 
 @router.message(AdminProductStates.waiting_image)
@@ -453,6 +502,7 @@ async def show_stats(message: Message, state: FSMContext) -> None:
     f"💎 Ombordagi qiymat: <b>{format_price(stats['stock_value'])}</b>",
     "",
     f"⏳ Kutilayotgan: <b>{stats['pending_orders']}</b>",
+    f"💳 To'langan: <b>{stats.get('paid_orders', 0)}</b>",
     f"✅ Qabul qilingan: <b>{stats['approved_orders']}</b>",
     f"❌ Rad etilgan: <b>{stats['rejected_orders']}</b>",
     f"🛒 Sotilgan dona: <b>{stats['sold_units']}</b>",

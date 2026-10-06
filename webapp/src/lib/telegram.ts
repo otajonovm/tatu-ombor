@@ -26,7 +26,16 @@ export function haptic(type: 'light' | 'medium' | 'heavy' = 'light') {
   WebApp.HapticFeedback.impactOccurred(type)
 }
 
+function supportsBackButton() {
+  try {
+    return WebApp.isVersionAtLeast('6.1')
+  } catch {
+    return false
+  }
+}
+
 export function showBackButton(onClick: () => void) {
+  if (!supportsBackButton()) return
   if (backButtonHandler) WebApp.BackButton.offClick(backButtonHandler)
   backButtonHandler = onClick
   WebApp.BackButton.show()
@@ -34,6 +43,7 @@ export function showBackButton(onClick: () => void) {
 }
 
 export function hideBackButton() {
+  if (!supportsBackButton()) return
   if (backButtonHandler) {
     WebApp.BackButton.offClick(backButtonHandler)
     backButtonHandler = null

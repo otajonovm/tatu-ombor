@@ -1,6 +1,7 @@
 .env
 ombor.db
 .bot.lock
+data/
 __pycache__/
 *.pyc
 .venv/

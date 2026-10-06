@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+BOT_USERNAME = os.getenv("BOT_USERNAME", "tatubrandshopbot").strip().lstrip("@")
+PAYMENTS_PROVIDER_TOKEN = os.getenv("PAYMENTS_PROVIDER_TOKEN", "").strip()
+PAYMENT_CURRENCY = "UZS"
 ADMIN_IDS: list[int] = [
   int(x.strip())
   for x in os.getenv("ADMIN_IDS", "").split(",")
@@ -24,6 +27,13 @@ WEBAPP_ORIGINS = [
   for origin in os.getenv("WEBAPP_ORIGINS", "").split(",")
   if origin.strip()
 ]
+# Brauzerda (Telegram tashqarisida) lokal test uchun. Productionda o'chiring.
+TMA_DEV_MODE = os.getenv("TMA_DEV_MODE", "").strip().lower() in {
+  "1",
+  "true",
+  "yes",
+  "on",
+}
 
 SHOP_NAME = "TATU Brend Do'koni"
 
@@ -77,6 +87,7 @@ DEFAULT_PRODUCTS = [
 
 ORDER_STATUS_LABELS = {
   "pending": "⏳ Kutilmoqda",
+  "paid": "💳 To'langan",
   "approved": "✅ Qabul qilindi",
   "rejected": "❌ Bekor qilindi",
 }

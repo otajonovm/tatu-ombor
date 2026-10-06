@@ -8,7 +8,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import BOT_TOKEN, DEFAULT_PRODUCTS, SUPABASE_KEY, SUPABASE_URL
-from handlers import admin, client, common
+from handlers import admin, client, common, payment
 from supabase_db import init_db
 from utils.placeholders import ensure_product_images
 from utils.singleton import acquire_singleton, release_singleton
@@ -41,7 +41,8 @@ async def main() -> None:
     )
     dp = Dispatcher(storage=MemoryStorage())
 
-    # Tartib muhim: avval admin (filtrlangan), keyin mijoz, oxirida common
+    # Tartib: to'lov (pre_checkout/success), admin, mijoz, common
+    dp.include_router(payment.router)
     dp.include_router(admin.router)
     dp.include_router(client.router)
     dp.include_router(common.router)

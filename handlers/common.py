@@ -1,5 +1,5 @@
 from aiogram import F, Router
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -11,8 +11,11 @@ from keyboards import (
   BTN_CLIENT_MENU,
   admin_reply_keyboard,
   client_reply_keyboard,
+  product_buy_keyboard,
   role_reply_keyboard,
 )
+from supabase_db import get_product
+from utils.media import send_product_card
 
 router = Router(name="common")
 
@@ -26,8 +29,63 @@ def welcome_text(admin_user: bool) -> str:
   )
 
 
-@router.message(Command("start", "menu"))
-async def cmd_start(message: Message, state: FSMContext) -> None:
+def parse_product_deep_link(args: str | None) -> int | None:
+  """prod_15 → 15. Noto'g'ri format uchun None."""
+  if not args:
+    return None
+  raw = args.strip()
+  if not raw.startswith("prod_"):
+    return None
+  product_id = raw.removeprefix("prod_").strip()
+  if not product_id.isdigit():
+    return None
+  return int(product_id)
+
+
+@router.message(CommandStart())
+async def cmd_start(
+  message: Message,
+  state: FSMContext,
+  command: CommandObject,
+) -> None:
+  await state.clear()
+  admin_user = is_admin(message.from_user.id)
+  product_id = parse_product_deep_link(command.args)
+
+  if product_id is not None:
+    product = get_product(product_id)
+    if (
+      not product
+      or not product.get("is_active", True)
+      or int(product.get("quantity") or 0) <= 0
+    ):
+      await message.answer(
+        "❌ Bu mahsulot topilmadi yoki hozircha sotuvda emas.\n"
+        "Katalogdan boshqa mahsulotni tanlang.",
+        reply_markup=role_reply_keyboard(admin_user),
+      )
+      return
+
+    await message.answer(
+      "🛍 QR / deep link orqali mahsulot ochildi:",
+      reply_markup=role_reply_keyboard(admin_user),
+    )
+    await send_product_card(
+      message,
+      product,
+      product_buy_keyboard(product_id),
+      for_client=True,
+    )
+    return
+
+  await message.answer(
+    welcome_text(admin_user),
+    reply_markup=role_reply_keyboard(admin_user),
+  )
+
+
+@router.message(Command("menu"))
+async def cmd_menu(message: Message, state: FSMContext) -> None:
   await state.clear()
   admin_user = is_admin(message.from_user.id)
   await message.answer(
@@ -45,12 +103,14 @@ async def cmd_help(message: Message) -> None:
       "• Mahsulot qo'shish / kirim / boshqarish\n"
       "• Yangi buyurtmalarni tasdiqlash yoki rad etish\n"
       "• Statistika va tarix\n"
+      "• Mahsulot kartasidan «🔲 QR Kod yaratish»\n"
       "• «Mijoz menyusi» orqali katalogni ko'rish"
     )
   else:
     text = (
       "ℹ️ <b>Yordam</b>\n\n"
       "• Katalogdan mahsulot tanlang\n"
+      "• QR kodni skaner qilib to'g'ridan-to'g'ri mahsulotni oching\n"
       "• Savatga qo'shing yoki tezkor buyurtma bering\n"
       "• «Mening buyurtmalarim» orqali holatni kuzating"
     )

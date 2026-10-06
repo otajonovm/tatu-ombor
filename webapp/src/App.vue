@@ -204,15 +204,21 @@ function openCart() {
 }
 
 async function submitOrder() {
-  if (!phone.value.trim()) {
-    notify('Telefon raqamingizni kiriting.')
+  const phoneNumber = phone.value.trim()
+  const digits = phoneNumber.replace(/\D/g, '')
+  if (digits.length < 9) {
+    notify('Telefon raqamni to‘liq kiriting (masalan +998901234567).')
+    return
+  }
+  if (!cart.value.length) {
+    notify('Savat bo‘sh.')
     return
   }
   submitting.value = true
   try {
     const result = await createOrder({
-      phone_number: phone.value,
-      comment: comment.value,
+      phone_number: phoneNumber,
+      comment: comment.value.trim(),
       items: cartPayload(cart.value),
     })
     cart.value = []
@@ -665,7 +671,7 @@ onMounted(async () => {
           </div>
           <div class="border-t border-slate-200 pt-3 text-lg font-black">Jami: {{ money(cartTotal) }}</div>
         </div>
-        <input v-model="phone" class="input mb-3" type="tel" placeholder="Telefon raqami *" />
+        <input v-model="phone" class="input mb-3" type="tel" inputmode="tel" placeholder="+998 90 123 45 67" />
         <textarea v-model="comment" class="input mb-4 min-h-20" placeholder="Izoh (ixtiyoriy)" />
         <button class="primary-button w-full" :disabled="submitting" @click="submitOrder">
           {{ submitting ? 'Yuborilmoqda...' : 'Buyurtmani tasdiqlash' }}

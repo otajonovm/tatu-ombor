@@ -37,7 +37,11 @@ def client_reply_keyboard(show_admin_back: bool = False) -> ReplyKeyboardMarkup:
     )
   if show_admin_back:
     rows.append([KeyboardButton(text=BTN_ADMIN_MENU)])
-  return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+  return ReplyKeyboardMarkup(
+    keyboard=rows,
+    resize_keyboard=True,
+    is_persistent=True,
+  )
 
 
 def admin_reply_keyboard() -> ReplyKeyboardMarkup:
@@ -51,7 +55,11 @@ def admin_reply_keyboard() -> ReplyKeyboardMarkup:
       0,
       [KeyboardButton(text="🛍 Do'konni ochish", web_app=WebAppInfo(url=WEBAPP_URL))],
     )
-  return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+  return ReplyKeyboardMarkup(
+    keyboard=rows,
+    resize_keyboard=True,
+    is_persistent=True,
+  )
 
 
 def role_reply_keyboard(is_admin_user: bool) -> ReplyKeyboardMarkup:
@@ -62,6 +70,7 @@ def cancel_reply_keyboard() -> ReplyKeyboardMarkup:
   return ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text=BTN_CANCEL)]],
     resize_keyboard=True,
+    is_persistent=True,
   )
 
 
@@ -89,15 +98,23 @@ def product_buy_keyboard(product_id: int) -> InlineKeyboardMarkup:
     inline_keyboard=[
       [
         InlineKeyboardButton(
-          text="🛒 Savatga qo'shish",
-          callback_data=f"client:addcart:{product_id}",
-        )
+          text="🛒 Savatga +1",
+          callback_data=f"client:addtocart1:{product_id}",
+        ),
+        InlineKeyboardButton(
+          text="⚡️ 1 dona buyurtma",
+          callback_data=f"client:buy1:{product_id}",
+        ),
       ],
       [
         InlineKeyboardButton(
-          text="⚡️ Tezkor buyurtma",
+          text="🛒 Boshqa miqdor",
+          callback_data=f"client:addcart:{product_id}",
+        ),
+        InlineKeyboardButton(
+          text="⚡️ Boshqa miqdor",
           callback_data=f"client:buynow:{product_id}",
-        )
+        ),
       ],
       [
         InlineKeyboardButton(
@@ -105,6 +122,30 @@ def product_buy_keyboard(product_id: int) -> InlineKeyboardMarkup:
           callback_data="client:catalog",
         )
       ],
+    ]
+  )
+
+
+def phone_request_keyboard() -> ReplyKeyboardMarkup:
+  return ReplyKeyboardMarkup(
+    keyboard=[
+      [KeyboardButton(text="📱 Raqamni ulashish", request_contact=True)],
+      [KeyboardButton(text=BTN_CANCEL)],
+    ],
+    resize_keyboard=True,
+    is_persistent=True,
+  )
+
+
+def pay_order_keyboard(order_id: int) -> InlineKeyboardMarkup:
+  return InlineKeyboardMarkup(
+    inline_keyboard=[
+      [
+        InlineKeyboardButton(
+          text="💳 Click orqali to'lash",
+          callback_data=f"client:pay:{order_id}",
+        )
+      ]
     ]
   )
 
@@ -167,10 +208,29 @@ def admin_products_keyboard(action: str) -> InlineKeyboardMarkup:
   return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+def admin_qr_keyboard(product_id: int) -> InlineKeyboardMarkup:
+  return InlineKeyboardMarkup(
+    inline_keyboard=[
+      [
+        InlineKeyboardButton(
+          text="🔲 QR Kod yaratish",
+          callback_data=f"admin:qr:{product_id}",
+        )
+      ]
+    ]
+  )
+
+
 def admin_manage_item_keyboard(product_id: int, is_active: bool) -> InlineKeyboardMarkup:
   archive_text = "🗄 Arxivlash" if is_active else "♻️ Faollashtirish"
   return InlineKeyboardMarkup(
     inline_keyboard=[
+      [
+        InlineKeyboardButton(
+          text="🔲 QR Kod yaratish",
+          callback_data=f"admin:qr:{product_id}",
+        )
+      ],
       [
         InlineKeyboardButton(
           text="💰 Narxni o'zgartirish",
