@@ -1,0 +1,24 @@
+{
+  "installCommand": "npm install --prefix webapp",
+  "buildCommand": "npm run build --prefix webapp",
+  "outputDirectory": "webapp/dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://tatubrandshop-87f20a5612d9.herokuapp.com/api/:path*"
+    },
+    {
+      "source": "/media/:path*",
+      "destination": "https://tatubrandshop-87f20a5612d9.herokuapp.com/media/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://tatubrandshop-87f20a5612d9.herokuapp.com/health"
+    },
+    {
+      "source": "/((?!assets/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
