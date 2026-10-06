@@ -331,9 +331,8 @@ async def me(user: TelegramUser = Depends(telegram_user)) -> dict[str, Any]:
 async def products(
   category: str | None = None,
   search: str | None = None,
-  user: TelegramUser = Depends(telegram_user),
 ) -> list[dict]:
-  del user
+  """Katalog ochiq — auth shart emas (buyurtma/admin alohida himoyalangan)."""
   rows = await run_db(get_active_products)
   if category:
     rows = [row for row in rows if row.get("category") == category]

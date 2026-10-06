@@ -78,5 +78,25 @@ export function closeTelegram() {
 }
 
 export function initData(): string {
-  return WebApp.initData || ''
+  if (WebApp.initData) return WebApp.initData
+  // Ba'zi Telegram klientlarida initData hash ichida keladi.
+  try {
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+    const fromHash = hash.get('tgWebAppData')
+    if (fromHash) return fromHash
+  } catch {
+    // ignore
+  }
+  return ''
+}
+
+/** Telegram WebApp initData paydo bo'lguncha kutadi (maks. timeoutMs). */
+export async function waitForInitData(timeoutMs = 2500): Promise<string> {
+  const started = Date.now()
+  let data = initData()
+  while (!data && Date.now() - started < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    data = initData()
+  }
+  return data
 }

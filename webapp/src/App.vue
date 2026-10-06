@@ -34,6 +34,7 @@ import {
   initTelegram,
   setMainButton,
   showBackButton,
+  waitForInitData,
 } from './lib/telegram'
 import type { CartLine, Order, Product, TelegramUser } from './types'
 
@@ -383,11 +384,26 @@ watch([cart, view, selected, cartOpen, checkoutOpen, stockProduct], () => {
 
 onMounted(async () => {
   initTelegram()
+  const data = await waitForInitData()
   try {
-    user.value = await getMe()
-    await loadCatalog()
+    if (!data) {
+      // Brauzerda ochilganda Telegram imzosi bo'lmaydi — katalogni baribir yuklaymiz.
+      error.value =
+        "Telegram orqali oching: botdagi «Do'konni ochish» tugmasi. " +
+        'Brauzerda buyurtma/auth ishlamaydi.'
+      await loadCatalog()
+    } else {
+      user.value = await getMe()
+      await loadCatalog()
+      error.value = ''
+    }
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : 'Ilova yuklanmadi.'
+    try {
+      await loadCatalog()
+    } catch {
+      // ignore
+    }
   }
   syncMainButton()
   syncBackButton()
