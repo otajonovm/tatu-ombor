@@ -334,8 +334,13 @@ async def delete_prod(callback: CallbackQuery) -> None:
   product_id = int(callback.data.split(":")[2])
   if delete_product(product_id):
     await callback.answer("O'chirildi!", show_alert=True)
+  elif get_product(product_id) and set_product_active(product_id, False):
+    await callback.answer(
+      "Mahsulot buyurtmalarga bog'langan. Katalogdan arxivlandi.",
+      show_alert=True,
+    )
   else:
-    await callback.answer("O'chirib bo'lmadi (bog'liq buyurtmalar bo'lishi mumkin).", show_alert=True)
+    await callback.answer("Mahsulot topilmadi yoki o'chirib bo'lmadi.", show_alert=True)
   await replace_with_text(
     callback.message,
     "✏️ <b>Mahsulotlarni boshqarish</b>\nTanlang:",
