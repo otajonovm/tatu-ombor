@@ -5,6 +5,7 @@ param(
 $processes = Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
   Where-Object {
     $_.CommandLine -like '*TATU_Ombor_bot*' -and
+    $_.CommandLine -match 'main\.py' -and
     $_.ProcessId -ne $ExcludePid
   }
 
