@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import json
 import logging
+from pathlib import Path
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -17,9 +18,10 @@ from urllib.parse import parse_qsl, unquote
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from config import ADMIN_IDS, BOT_TOKEN, WEBAPP_ORIGINS
+from config import ADMIN_IDS, BOT_TOKEN, WEBAPI_URL, WEBAPP_ORIGINS
 from supabase_db import (
   add_product,
   approve_order,
@@ -36,6 +38,7 @@ from supabase_db import (
   upload_product_image,
   update_product,
 )
+from supabase_db import IMAGES_DIR
 
 from aiogram import Bot
 
@@ -48,6 +51,8 @@ app.add_middleware(
   allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
   allow_headers=["*"],
 )
+if Path(IMAGES_DIR).is_dir():
+  app.mount("/media", StaticFiles(directory=IMAGES_DIR), name="media")
 
 
 @dataclass(frozen=True)
@@ -150,6 +155,23 @@ def admin_user(user: TelegramUser = Depends(telegram_user)) -> TelegramUser:
 
 async def run_db(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
   return await asyncio.to_thread(function, *args, **kwargs)
+
+
+def public_product_image_urls(product: dict) -> dict:
+  """Local bot images are exposed through the API for the Mini App."""
+  result = dict(product)
+  for key in ("image_url",):
+    value = result.get(key)
+    if value and not str(value).startswith(("http://", "https://")):
+      result[key] = f"{WEBAPI_URL}/media/{value}"
+  values = result.get("image_urls") or []
+  result["image_urls"] = [
+    value
+    if str(value).startswith(("http://", "https://"))
+    else f"{WEBAPI_URL}/media/{value}"
+    for value in values
+  ]
+  return result
 
 
 class OrderItemInput(BaseModel):
@@ -294,7 +316,7 @@ async def products(
       if needle in row["name"].casefold()
       or needle in (row.get("description") or "").casefold()
     ]
-  return rows
+  return [public_product_image_urls(row) for row in rows]
 
 
 @app.get("/api/orders")
@@ -332,7 +354,8 @@ async def admin_products(
   user: TelegramUser = Depends(admin_user),
 ) -> list[dict]:
   del user
-  return await run_db(get_all_products, True)
+  products = await run_db(get_all_products, True)
+  return [public_product_image_urls(product) for product in products]
 
 
 @app.post("/api/admin/products", status_code=status.HTTP_201_CREATED)
