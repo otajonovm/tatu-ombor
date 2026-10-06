@@ -12,6 +12,9 @@ PRODUCT_FIELDS = (
   "id,name,description,price,quantity,image_url,image_urls,category,"
   "sizes,colors,is_active,created_at"
 )
+LEGACY_PRODUCT_FIELDS = (
+  "id,name,description,price,quantity,image_url,is_active,created_at"
+)
 ORDER_FIELDS = (
   "id,user_id,user_name,phone_number,comment,total_price,status,created_at"
 )
@@ -36,6 +39,21 @@ def _one(data: Any) -> dict | None:
   if isinstance(data, list):
     return data[0] if data else None
   return data if isinstance(data, dict) else None
+
+
+def _normalise_product(product: dict) -> dict:
+  """Eski products jadvali bilan TMA o'tish davrida ham ishlaydi."""
+  product.setdefault("image_urls", [])
+  if not product["image_urls"] and product.get("image_url"):
+    product["image_urls"] = [product["image_url"]]
+  product.setdefault("category", "suvenir")
+  product.setdefault("sizes", [])
+  product.setdefault("colors", [])
+  return product
+
+
+def _normalise_products(products: list[dict]) -> list[dict]:
+  return [_normalise_product(product) for product in products]
 
 
 def init_db(default_products: list[dict]) -> None:
@@ -96,49 +114,88 @@ def upload_product_image(content: bytes, filename: str, content_type: str) -> st
 
 
 def get_active_products() -> list[dict]:
-  response = (
-    _db()
-    .table("products")
-    .select(PRODUCT_FIELDS)
-    .eq("is_active", True)
-    .gt("quantity", 0)
-    .order("name")
-    .execute()
-  )
-  return response.data or []
+  try:
+    response = (
+      _db()
+      .table("products")
+      .select(PRODUCT_FIELDS)
+      .eq("is_active", True)
+      .gt("quantity", 0)
+      .order("name")
+      .execute()
+    )
+  except Exception:
+    response = (
+      _db()
+      .table("products")
+      .select(LEGACY_PRODUCT_FIELDS)
+      .eq("is_active", True)
+      .gt("quantity", 0)
+      .order("name")
+      .execute()
+    )
+  return _normalise_products(response.data or [])
 
 
 def get_all_products(include_inactive: bool = True) -> list[dict]:
-  query = _db().table("products").select(PRODUCT_FIELDS)
-  if not include_inactive:
-    query = query.eq("is_active", True)
-  response = query.order("name").execute()
-  rows = response.data or []
+  try:
+    query = _db().table("products").select(PRODUCT_FIELDS)
+    if not include_inactive:
+      query = query.eq("is_active", True)
+    response = query.order("name").execute()
+  except Exception:
+    query = _db().table("products").select(LEGACY_PRODUCT_FIELDS)
+    if not include_inactive:
+      query = query.eq("is_active", True)
+    response = query.order("name").execute()
+  rows = _normalise_products(response.data or [])
   return sorted(rows, key=lambda row: (not row["is_active"], row["name"]))
 
 
 def get_product(product_id: int) -> dict | None:
-  response = (
-    _db()
-    .table("products")
-    .select(PRODUCT_FIELDS)
-    .eq("id", product_id)
-    .limit(1)
-    .execute()
-  )
-  return _one(response.data)
+  try:
+    response = (
+      _db()
+      .table("products")
+      .select(PRODUCT_FIELDS)
+      .eq("id", product_id)
+      .limit(1)
+      .execute()
+    )
+  except Exception:
+    response = (
+      _db()
+      .table("products")
+      .select(LEGACY_PRODUCT_FIELDS)
+      .eq("id", product_id)
+      .limit(1)
+      .execute()
+    )
+  product = _one(response.data)
+  return _normalise_product(product) if product else None
 
 
 def get_product_by_name(name: str) -> dict | None:
-  response = (
-    _db()
-    .table("products")
-    .select(PRODUCT_FIELDS)
-    .eq("name", name.strip())
-    .limit(1)
-    .execute()
-  )
-  return _one(response.data)
+  try:
+    response = (
+      _db()
+      .table("products")
+      .select(PRODUCT_FIELDS)
+      .eq("name", name.strip())
+      .limit(1)
+      .execute()
+    )
+  except Exception:
+    response = (
+      _db()
+      .table("products")
+      .select(LEGACY_PRODUCT_FIELDS)
+      .eq("name", name.strip())
+      .limit(1)
+      .execute()
+    )
+  product = _one(response.data)
+  return _normalise_product(product) if product else None
 
 
 def add_product(
