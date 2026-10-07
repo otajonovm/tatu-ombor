@@ -327,10 +327,13 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS shop_mark_order_paid(INTEGER, TEXT);
+
 -- Telegram Payments muvaffaqiyatli to'lov: status=paid + ombor kamaytirish
 CREATE OR REPLACE FUNCTION shop_mark_order_paid(
   p_order_id INTEGER,
-  p_payment_charge_id TEXT DEFAULT NULL
+  p_payment_charge_id TEXT DEFAULT NULL,
+  p_provider TEXT DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -340,8 +343,14 @@ AS $$
 DECLARE
   v_order orders%ROWTYPE;
   v_item RECORD;
-  v_product products%ROWTYPE;
+  v_provider TEXT;
 BEGIN
+  v_provider := CASE lower(coalesce(p_provider, ''))
+    WHEN 'click' THEN 'Click'
+    WHEN 'payme' THEN 'Payme'
+    ELSE 'To''lov'
+  END;
+
   SELECT * INTO v_order
   FROM orders
   WHERE id = p_order_id
@@ -366,31 +375,38 @@ BEGIN
     );
   END IF;
 
-  FOR v_item IN
-    SELECT oi.product_id, oi.quantity, p.name, p.is_active
+  IF (SELECT COUNT(*) FROM order_items WHERE order_id = p_order_id) = 0 THEN
+    RETURN jsonb_build_object(
+      'ok', FALSE,
+      'message', 'Buyurtmada mahsulot yo''q.'
+    );
+  END IF;
+
+  IF (
+    SELECT COUNT(*) FROM order_items WHERE order_id = p_order_id
+  ) <> (
+    SELECT COUNT(*)
     FROM order_items oi
     JOIN products p ON p.id = oi.product_id
     WHERE oi.order_id = p_order_id
+  ) THEN
+    RETURN jsonb_build_object(
+      'ok', FALSE,
+      'message', 'Kechirasiz, tanlangan mahsulot omborda yetarli emas.'
+    );
+  END IF;
+
+  FOR v_item IN
+    SELECT oi.product_id, oi.quantity, p.is_active, p.quantity AS stock
+    FROM order_items oi
+    JOIN products p ON p.id = oi.product_id
+    WHERE oi.order_id = p_order_id
+    FOR UPDATE OF p
   LOOP
-    SELECT * INTO v_product
-    FROM products
-    WHERE id = v_item.product_id
-    FOR UPDATE;
-
-    IF NOT v_product.is_active THEN
+    IF v_item.is_active IS NOT TRUE OR v_item.stock < v_item.quantity THEN
       RETURN jsonb_build_object(
         'ok', FALSE,
-        'message', format('«%s» sotuvda emas.', v_item.name)
-      );
-    END IF;
-
-    IF v_product.quantity < v_item.quantity THEN
-      RETURN jsonb_build_object(
-        'ok', FALSE,
-        'message', format(
-          '«%s» uchun qoldiq yetarli emas (%s/%s).',
-          v_item.name, v_product.quantity, v_item.quantity
-        )
+        'message', 'Kechirasiz, tanlangan mahsulot omborda yetarli emas.'
       );
     END IF;
   END LOOP;
@@ -402,7 +418,13 @@ BEGIN
   LOOP
     UPDATE products
     SET quantity = quantity - v_item.quantity
-    WHERE id = v_item.product_id;
+    WHERE id = v_item.product_id
+      AND is_active = TRUE
+      AND quantity >= v_item.quantity;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'stock changed during payment';
+    END IF;
 
     INSERT INTO transactions (
       product_id, type, quantity, admin_id, comment
@@ -412,7 +434,7 @@ BEGIN
       'sotuv',
       v_item.quantity,
       NULL,
-      format('Click to''lov · buyurtma #%s', p_order_id)
+      format('%s to''lov · buyurtma #%s', v_provider, p_order_id)
     );
   END LOOP;
 
@@ -446,7 +468,7 @@ GRANT EXECUTE ON FUNCTION shop_approve_order(INTEGER, BIGINT)
   TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION shop_reject_order(INTEGER)
   TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION shop_mark_order_paid(INTEGER, TEXT)
+GRANT EXECUTE ON FUNCTION shop_mark_order_paid(INTEGER, TEXT, TEXT)
   TO anon, authenticated;
 
 -- Bot Telegram orqali o'z autentifikatsiyasini tekshiradi. Anon key bilan

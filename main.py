@@ -7,7 +7,14 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from config import BOT_TOKEN, DEFAULT_PRODUCTS, SUPABASE_KEY, SUPABASE_URL
+from config import (
+  BOT_TOKEN,
+  CLICK_PROVIDER_TOKEN,
+  DEFAULT_PRODUCTS,
+  PAYME_PROVIDER_TOKEN,
+  SUPABASE_KEY,
+  SUPABASE_URL,
+)
 from handlers import admin, client, common, payment
 from supabase_db import init_db
 from utils.placeholders import ensure_product_images
@@ -46,6 +53,16 @@ async def main() -> None:
     dp.include_router(admin.router)
     dp.include_router(client.router)
     dp.include_router(common.router)
+
+    for name, token in (
+      ("Click", CLICK_PROVIDER_TOKEN),
+      ("Payme", PAYME_PROVIDER_TOKEN),
+    ):
+      if token:
+        mode = "TEST" if ":TEST:" in token else "LIVE"
+        logger.info("%s to'lovlari yoqilgan (%s).", name, mode)
+      else:
+        logger.warning("%s tokeni yo'q — bu usul o'chirilgan.", name)
 
     logger.info("TATU Brend Do'kon boti ishga tushmoqda...")
     await dp.start_polling(bot, drop_pending_updates=True)

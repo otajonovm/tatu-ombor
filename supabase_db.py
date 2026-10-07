@@ -724,7 +724,12 @@ def reject_order(order_id: int) -> tuple[bool, str]:
   return bool(result.get("ok")), result.get("message", "Noma'lum xatolik.")
 
 
-# ── Payments (Telegram / Click) ─────────────────────────────
+# ── Payments (Telegram / Click + Payme) ─────────────────────
+
+# Pre-checkout: mijozdan pul yechilmasin, shu matn ko'rsatiladi.
+PAYMENT_STOCK_ERROR = (
+  "Kechirasiz, tanlangan mahsulot omborda yetarli emas."
+)
 
 
 def som_to_tiyin(amount_som: int) -> int:
@@ -736,13 +741,32 @@ def tiyin_to_som(amount_tiyin: int) -> int:
   return int(amount_tiyin) // 100
 
 
-def parse_order_payload(payload: str) -> int | None:
+def payment_comment(order_id: int, provider: str) -> str:
+  label = {"click": "Click", "payme": "Payme"}.get(provider, "To'lov")
+  return f"{label} to'lov · buyurtma #{order_id}"
+
+
+def parse_payment_payload(payload: str) -> tuple[int | None, str]:
+  """`order_{id}` yoki `order_{id}:click|payme` dan id va provayderni ajratadi."""
   if not payload or not payload.startswith("order_"):
-    return None
-  raw = payload.removeprefix("order_").strip()
+    return None, ""
+  body = payload.removeprefix("order_").strip()
+  provider = ""
+  if ":" in body:
+    raw, provider = body.split(":", 1)
+    provider = provider.strip().lower()
+  else:
+    raw = body
   if not raw.isdigit():
-    return None
-  return int(raw)
+    return None, ""
+  if provider not in {"click", "payme"}:
+    provider = ""
+  return int(raw), provider
+
+
+def parse_order_payload(payload: str) -> int | None:
+  order_id, _provider = parse_payment_payload(payload)
+  return order_id
 
 
 def validate_order_for_payment(order_id: int) -> tuple[bool, str]:
@@ -765,19 +789,26 @@ def validate_order_for_payment(order_id: int) -> tuple[bool, str]:
     product = get_product(int(item["product_id"]))
     name = item.get("product_name") or (product or {}).get("name") or "Mahsulot"
     qty = int(item["quantity"])
-    if not product or not product.get("is_active", True):
-      return False, f"«{name}» sotuvda emas."
-    if int(product["quantity"]) < qty:
-      return False, (
-        f"«{name}» uchun qoldiq yetarli emas "
-        f"({product['quantity']}/{qty})."
+    if (
+      not product
+      or not product.get("is_active", True)
+      or int(product["quantity"]) < qty
+    ):
+      logger.info(
+        "To'lov rad etildi order=%s product=%s qty=%s stock=%s",
+        order_id,
+        name,
+        qty,
+        None if not product else product.get("quantity"),
       )
+      return False, PAYMENT_STOCK_ERROR
   return True, "OK"
 
 
 def _mark_order_paid_direct(
   order_id: int,
   payment_charge_id: str | None = None,
+  provider: str = "",
 ) -> tuple[bool, str]:
   """RPC yo'q bo'lsa — stock/transaction/status ni ketma-ket yangilaydi."""
   ok, message = validate_order_for_payment(order_id)
@@ -793,21 +824,28 @@ def _mark_order_paid_direct(
     product_id = int(item["product_id"])
     qty = int(item["quantity"])
     product = get_product(product_id)
-    if not product:
-      return False, "Mahsulot topilmadi."
+    if not product or not product.get("is_active", True):
+      return False, PAYMENT_STOCK_ERROR
     new_qty = int(product["quantity"]) - qty
     if new_qty < 0:
-      return False, "Qoldiq yetarli emas."
-    _db().table("products").update({"quantity": new_qty}).eq(
-      "id", product_id
-    ).execute()
+      return False, PAYMENT_STOCK_ERROR
+    updated = (
+      _db()
+      .table("products")
+      .update({"quantity": new_qty})
+      .eq("id", product_id)
+      .gte("quantity", qty)
+      .execute()
+    )
+    if not updated.data:
+      return False, PAYMENT_STOCK_ERROR
     _db().table("transactions").insert(
       {
         "product_id": product_id,
         "type": "sotuv",
         "quantity": qty,
         "admin_id": None,
-        "comment": f"Click to'lov · buyurtma #{order_id}",
+        "comment": payment_comment(order_id, provider),
       }
     ).execute()
 
@@ -835,27 +873,54 @@ def _mark_order_paid_direct(
   return True, "To'lov qabul qilindi."
 
 
+def _align_payment_comment(order_id: int, provider: str) -> None:
+  """RPC izohi boshqa provayderda qolgan bo'lsa, tanlangan usulga moslaydi."""
+  if provider not in {"click", "payme"}:
+    return
+  target = payment_comment(order_id, provider)
+  variants = (
+    f"Click to'lov · buyurtma #{order_id}",
+    f"Payme to'lov · buyurtma #{order_id}",
+    f"To'lov · buyurtma #{order_id}",
+  )
+  for comment in variants:
+    if comment == target:
+      continue
+    try:
+      _db().table("transactions").update({"comment": target}).eq(
+        "comment", comment
+      ).execute()
+    except Exception:
+      logger.debug("To'lov izohini yangilab bo'lmadi", exc_info=True)
+
+
 def mark_order_paid(
   order_id: int,
   payment_charge_id: str | None = None,
+  provider: str = "",
 ) -> tuple[bool, str]:
-  try:
-    response = _db().rpc(
-      "shop_mark_order_paid",
-      {
-        "p_order_id": order_id,
-        "p_payment_charge_id": payment_charge_id,
-      },
-    ).execute()
-    result = _one(response.data) or {}
-    if "ok" in result:
-      return bool(result.get("ok")), result.get(
-        "message", "Noma'lum xatolik."
-      )
-  except Exception as error:
-    logger.warning("shop_mark_order_paid RPC ishlamadi: %s", error)
+  base = {
+    "p_order_id": order_id,
+    "p_payment_charge_id": payment_charge_id,
+  }
+  attempts = [base]
+  if provider in {"click", "payme"}:
+    attempts.insert(0, {**base, "p_provider": provider})
 
-  return _mark_order_paid_direct(order_id, payment_charge_id)
+  for params in attempts:
+    try:
+      response = _db().rpc("shop_mark_order_paid", params).execute()
+      result = _one(response.data) or {}
+      if "ok" in result:
+        if result.get("ok"):
+          _align_payment_comment(order_id, provider)
+        return bool(result.get("ok")), result.get(
+          "message", "Noma'lum xatolik."
+        )
+    except Exception as error:
+      logger.warning("shop_mark_order_paid RPC ishlamadi: %s", error)
+
+  return _mark_order_paid_direct(order_id, payment_charge_id, provider)
 
 
 # ── Stats ──────────────────────────────────────────────────

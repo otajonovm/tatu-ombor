@@ -6,7 +6,7 @@ from aiogram.types import (
   WebAppInfo,
 )
 
-from config import WEBAPP_URL
+from config import CLICK_PROVIDER_TOKEN, PAYME_PROVIDER_TOKEN, WEBAPP_URL
 from supabase_db import format_price, get_all_products, get_orders_by_status
 
 # Reply tugmalar
@@ -138,16 +138,27 @@ def phone_request_keyboard() -> ReplyKeyboardMarkup:
 
 
 def pay_order_keyboard(order_id: int) -> InlineKeyboardMarkup:
-  return InlineKeyboardMarkup(
-    inline_keyboard=[
+  """Click va Payme — ikkalasi ham yoqilgan bo'lsa, mijoz o'zi tanlaydi."""
+  rows: list[list[InlineKeyboardButton]] = []
+  if CLICK_PROVIDER_TOKEN:
+    rows.append(
       [
         InlineKeyboardButton(
           text="💳 Click orqali to'lash",
-          callback_data=f"client:pay:{order_id}",
+          callback_data=f"client:pay:{order_id}:click",
         )
       ]
-    ]
-  )
+    )
+  if PAYME_PROVIDER_TOKEN:
+    rows.append(
+      [
+        InlineKeyboardButton(
+          text="🟢 Payme orqali to'lash",
+          callback_data=f"client:pay:{order_id}:payme",
+        )
+      ]
+    )
+  return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def cart_keyboard(has_items: bool) -> InlineKeyboardMarkup:

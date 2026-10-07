@@ -443,30 +443,39 @@ async def _finalize_order(message: Message, state: FSMContext, phone: str) -> No
     reply_markup=_client_kb(user.id),
   )
 
-  from handlers.payment import payments_configured, send_order_invoice
+  from handlers.payment import available_providers, send_order_invoice
 
+  order_id = int(order["id"])
+  providers = available_providers()
   try:
-    if payments_configured():
+    if len(providers) == 1:
+      code, label = providers[0]
       sent = await send_order_invoice(
         message.bot,
         message.chat.id,
         order,
-        intro_text="💳 Click orqali to'lovni yakunlang:",
+        provider=code,
+        intro_text=f"💳 {label} orqali to'lovni yakunlang:",
       )
       if not sent:
         await message.answer(
           "Invoys ochilmadi. Qayta urinib ko'ring:",
-          reply_markup=pay_order_keyboard(int(order["id"])),
+          reply_markup=pay_order_keyboard(order_id),
         )
+    elif providers:
+      await message.answer(
+        "💳 To'lov usulini tanlang:",
+        reply_markup=pay_order_keyboard(order_id),
+      )
     else:
       await message.answer(
         "⚠️ Onlayn to'lov vaqtincha o'chirilgan. Admin tasdiqlashini kuting.",
-        reply_markup=pay_order_keyboard(int(order["id"])),
+        reply_markup=_client_kb(user.id),
       )
   except Exception as error:
     await message.answer(
       f"⚠️ Buyurtma saqlandi, lekin to'lov oynasi ochilmadi.\n{error}",
-      reply_markup=pay_order_keyboard(int(order["id"])),
+      reply_markup=pay_order_keyboard(order_id),
     )
 
   notify = (

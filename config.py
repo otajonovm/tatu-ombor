@@ -6,7 +6,17 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "tatubrandshopbot").strip().lstrip("@")
-PAYMENTS_PROVIDER_TOKEN = os.getenv("PAYMENTS_PROVIDER_TOKEN", "").strip()
+# Ikkala provayder alohida token. Eski PAYMENTS_PROVIDER_TOKEN faqat Click
+# kaliti berilmagan bo'lsa Click sifatida olinadi.
+PAYME_PROVIDER_TOKEN = os.getenv("PAYME_PROVIDER_TOKEN", "").strip()
+CLICK_PROVIDER_TOKEN = os.getenv("CLICK_PROVIDER_TOKEN", "").strip()
+_legacy_payment_token = os.getenv("PAYMENTS_PROVIDER_TOKEN", "").strip()
+if (
+  not CLICK_PROVIDER_TOKEN
+  and _legacy_payment_token
+  and _legacy_payment_token != PAYME_PROVIDER_TOKEN
+):
+  CLICK_PROVIDER_TOKEN = _legacy_payment_token
 PAYMENT_CURRENCY = "UZS"
 ADMIN_IDS: list[int] = [
   int(x.strip())
