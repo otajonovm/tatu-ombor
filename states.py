@@ -20,4 +20,7 @@ class AdminStockStates(StatesGroup):
 
 
 class AdminEditStates(StatesGroup):
+  waiting_name = State()
   waiting_price = State()
+  waiting_quantity = State()
+  waiting_image = State()

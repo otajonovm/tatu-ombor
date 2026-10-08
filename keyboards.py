@@ -244,9 +244,23 @@ def admin_manage_item_keyboard(product_id: int, is_active: bool) -> InlineKeyboa
       ],
       [
         InlineKeyboardButton(
-          text="💰 Narxni o'zgartirish",
+          text="✏️ Nom",
+          callback_data=f"admin:editname:{product_id}",
+        ),
+        InlineKeyboardButton(
+          text="🖼 Rasm",
+          callback_data=f"admin:editimage:{product_id}",
+        ),
+      ],
+      [
+        InlineKeyboardButton(
+          text="📦 Miqdor",
+          callback_data=f"admin:editqty:{product_id}",
+        ),
+        InlineKeyboardButton(
+          text="💰 Narx",
           callback_data=f"admin:editprice:{product_id}",
-        )
+        ),
       ],
       [
         InlineKeyboardButton(

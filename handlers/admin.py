@@ -19,6 +19,7 @@ from supabase_db import (
   reject_order,
   set_product_active,
   stock_in,
+  update_product,
   update_product_price,
 )
 from filters.admin import IsAdminFilter
@@ -323,6 +324,45 @@ async def manage_pick(callback: CallbackQuery) -> None:
   )
 
 
+@router.callback_query(F.data.startswith("admin:editname:"))
+async def edit_name_start(callback: CallbackQuery, state: FSMContext) -> None:
+  product_id = int(callback.data.split(":")[2])
+  product = get_product(product_id)
+  if not product:
+    await callback.answer("Topilmadi.", show_alert=True)
+    return
+  await callback.answer()
+  await state.set_state(AdminEditStates.waiting_name)
+  await state.update_data(product_id=product_id)
+  await replace_with_text(
+    callback.message,
+    f"✏️ <b>{product['name']}</b>\n\nYangi nomni kiriting:",
+  )
+
+
+@router.message(AdminEditStates.waiting_name, F.text)
+async def edit_name_save(message: Message, state: FSMContext) -> None:
+  name = (message.text or "").strip()
+  if len(name) < 2 or name.isdigit():
+    await message.answer("❌ Noto'g'ri nom. Qayta kiriting:")
+    return
+  data = await state.get_data()
+  product_id = data.get("product_id")
+  existing = get_product_by_name(name)
+  if existing and int(existing["id"]) != int(product_id):
+    await message.answer("❌ Bu nom band. Boshqa nom yozing:")
+    return
+  product = update_product(product_id, {"name": name})
+  await state.clear()
+  if not product:
+    await message.answer("Xatolik.", reply_markup=admin_reply_keyboard())
+    return
+  await message.answer(
+    f"✅ Nom yangilandi: <b>{product['name']}</b>",
+    reply_markup=admin_reply_keyboard(),
+  )
+
+
 @router.callback_query(F.data.startswith("admin:editprice:"))
 async def edit_price_start(callback: CallbackQuery, state: FSMContext) -> None:
   product_id = int(callback.data.split(":")[2])
@@ -357,6 +397,107 @@ async def edit_price_save(message: Message, state: FSMContext) -> None:
     f"✅ Narx yangilandi: <b>{product['name']}</b> — {format_price(product['price'])}",
     reply_markup=admin_reply_keyboard(),
   )
+
+
+@router.callback_query(F.data.startswith("admin:editqty:"))
+async def edit_qty_start(callback: CallbackQuery, state: FSMContext) -> None:
+  product_id = int(callback.data.split(":")[2])
+  product = get_product(product_id)
+  if not product:
+    await callback.answer("Topilmadi.", show_alert=True)
+    return
+  await callback.answer()
+  await state.set_state(AdminEditStates.waiting_quantity)
+  await state.update_data(product_id=product_id)
+  await replace_with_text(
+    callback.message,
+    f"📦 <b>{product['name']}</b>\n"
+    f"Joriy miqdor: <b>{product['quantity']}</b> dona\n\n"
+    "Yangi miqdorni kiriting (0 yoki undan katta):",
+  )
+
+
+@router.message(AdminEditStates.waiting_quantity, F.text)
+async def edit_qty_save(message: Message, state: FSMContext) -> None:
+  text = (message.text or "").strip()
+  if not text.isdigit() or int(text) < 0:
+    await message.answer("❌ Miqdor noto'g'ri. Qayta kiriting:")
+    return
+  data = await state.get_data()
+  product = update_product(data["product_id"], {"quantity": int(text)})
+  await state.clear()
+  if not product:
+    await message.answer("Xatolik.", reply_markup=admin_reply_keyboard())
+    return
+  await message.answer(
+    f"✅ Miqdor yangilandi: <b>{product['name']}</b> — {product['quantity']} dona",
+    reply_markup=admin_reply_keyboard(),
+  )
+
+
+@router.callback_query(F.data.startswith("admin:editimage:"))
+async def edit_image_start(callback: CallbackQuery, state: FSMContext) -> None:
+  product_id = int(callback.data.split(":")[2])
+  product = get_product(product_id)
+  if not product:
+    await callback.answer("Topilmadi.", show_alert=True)
+    return
+  await callback.answer()
+  await state.set_state(AdminEditStates.waiting_image)
+  await state.update_data(product_id=product_id)
+  await replace_with_text(
+    callback.message,
+    f"🖼 <b>{product['name']}</b>\n\n"
+    "Yangi rasmni <b>foto</b> sifatida yuboring:",
+  )
+
+
+@router.message(AdminEditStates.waiting_image, F.photo)
+async def edit_image_save(message: Message, state: FSMContext) -> None:
+  data = await state.get_data()
+  product_id = data.get("product_id")
+  product = get_product(product_id) if product_id else None
+  if not product:
+    await state.clear()
+    await message.answer("Xatolik.", reply_markup=admin_reply_keyboard())
+    return
+
+  photo = message.photo[-1]
+  try:
+    image_path = await save_telegram_photo(
+      message.bot, photo.file_id, product["name"]
+    )
+  except Exception as error:
+    logger.exception("Rasm yuklab olinmadi: %s", error)
+    await message.answer("❌ Rasm saqlanmadi. Qayta yuboring:")
+    return
+
+  old_image = product.get("image_url")
+  updated = update_product(product_id, {"image_url": image_path})
+  if not updated:
+    await state.clear()
+    await message.answer("Xatolik.", reply_markup=admin_reply_keyboard())
+    return
+
+  if old_image and not str(old_image).startswith("http") and old_image != image_path:
+    old_path = IMAGES_DIR / old_image
+    if old_path.is_file():
+      try:
+        old_path.unlink()
+      except OSError:
+        logger.warning("Eski rasm o'chirilmadi: %s", old_path)
+
+  await state.clear()
+  await message.answer_photo(
+    photo=FSInputFile(IMAGES_DIR / image_path),
+    caption=f"✅ Rasm yangilandi: <b>{updated['name']}</b>",
+    reply_markup=admin_reply_keyboard(),
+  )
+
+
+@router.message(AdminEditStates.waiting_image)
+async def edit_image_invalid(message: Message) -> None:
+  await message.answer("❌ Iltimos, yangi rasmni <b>foto</b> sifatida yuboring.")
 
 
 @router.callback_query(F.data.startswith("admin:toggle:"))
@@ -557,6 +698,16 @@ async def hint_stock_qty(message: Message) -> None:
   await message.answer("🔢 Kirim miqdorini raqam bilan yozing.")
 
 
+@router.message(AdminEditStates.waiting_name)
+async def hint_edit_name(message: Message) -> None:
+  await message.answer("📝 Yangi nomni matn bilan yozing.")
+
+
 @router.message(AdminEditStates.waiting_price)
 async def hint_edit_price(message: Message) -> None:
   await message.answer("🔢 Yangi narxni raqam bilan yozing.")
+
+
+@router.message(AdminEditStates.waiting_quantity)
+async def hint_edit_qty(message: Message) -> None:
+  await message.answer("🔢 Yangi miqdorni raqam bilan yozing.")
