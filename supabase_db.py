@@ -130,7 +130,36 @@ def format_price(amount: int) -> str:
   return f"{int(amount):,}".replace(",", " ") + " so'm"
 
 
+def ensure_product_images_bucket() -> None:
+  storage = _db().storage
+  try:
+    buckets = storage.list_buckets() or []
+    names = {
+      getattr(bucket, "name", None) or bucket.get("name")
+      for bucket in buckets
+    }
+    if "product-images" in names:
+      return
+  except Exception as error:
+    logger.warning("Storage bucketlarini o'qib bo'lmadi: %s", error)
+
+  try:
+    storage.create_bucket(
+      "product-images",
+      options={
+        "public": True,
+        "file_size_limit": 5 * 1024 * 1024,
+        "allowed_mime_types": ["image/jpeg", "image/png", "image/webp"],
+      },
+    )
+    logger.info("Supabase Storage bucket yaratildi: product-images")
+  except Exception as error:
+    # Bucket allaqachon bor yoki kalitda ruxsat yo'q
+    logger.warning("product-images bucket yaratilmadi: %s", error)
+
+
 def upload_product_image(content: bytes, filename: str, content_type: str) -> str:
+  ensure_product_images_bucket()
   extension = Path(filename).suffix.lower() or ".jpg"
   path = f"products/{uuid.uuid4().hex}{extension}"
   _db().storage.from_("product-images").upload(
@@ -299,13 +328,33 @@ def update_product_price(product_id: int, price: int) -> dict | None:
 def update_product(product_id: int, updates: dict) -> dict | None:
   if not updates:
     return get_product(product_id)
-  response = (
-    _db()
-    .table("products")
-    .update(updates)
-    .eq("id", product_id)
-    .execute()
-  )
+  payload = dict(updates)
+  # Ba'zi projectlarda image_urls/category hali yo'q — oddiy ustunlar bilan qayta urinish
+  optional_cols = ("image_urls", "category", "sizes", "colors")
+  try:
+    response = (
+      _db()
+      .table("products")
+      .update(payload)
+      .eq("id", product_id)
+      .execute()
+    )
+  except Exception as error:
+    stripped = {k: v for k, v in payload.items() if k not in optional_cols}
+    if stripped == payload:
+      raise
+    logger.warning(
+      "Mahsulot yangilash to'liq ustunlar bilan muvaffaqiyatsiz (%s). "
+      "Oddiy ustunlar bilan urinilmoqda.",
+      error,
+    )
+    response = (
+      _db()
+      .table("products")
+      .update(stripped)
+      .eq("id", product_id)
+      .execute()
+    )
   return _one(response.data)
 
 

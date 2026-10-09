@@ -8,13 +8,15 @@ from supabase_db import format_price
 IMAGES_DIR = Path(__file__).parent.parent / "images"
 
 
-def get_product_photo(product: dict) -> FSInputFile | URLInputFile | None:
+def get_product_photo(product: dict) -> FSInputFile | URLInputFile | str | None:
   image_url = product.get("image_url")
   if not image_url:
     return None
   value = str(image_url).strip()
   if value.startswith(("http://", "https://")):
     return URLInputFile(value)
+  if value.startswith("tgfile:"):
+    return value.removeprefix("tgfile:")
   path = IMAGES_DIR / value
   return FSInputFile(path) if path.is_file() else None
 

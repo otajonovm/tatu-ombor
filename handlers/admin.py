@@ -2,13 +2,7 @@ import logging
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import (
-  BufferedInputFile,
-  CallbackQuery,
-  FSInputFile,
-  Message,
-  URLInputFile,
-)
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from config import ORDER_STATUS_LABELS, TX_TYPE_LABELS
 from supabase_db import (
@@ -170,13 +164,8 @@ async def add_image(message: Message, state: FSMContext) -> None:
     return
 
   await state.clear()
-  photo_input = (
-    URLInputFile(image_url)
-    if str(image_url).startswith(("http://", "https://"))
-    else FSInputFile(IMAGES_DIR / image_url)
-  )
   await message.answer_photo(
-    photo=photo_input,
+    photo=photo.file_id,
     caption=(
       f"✅ <b>Mahsulot qo'shildi!</b>\n\n"
       f"🛍 {product['name']}\n"
@@ -485,10 +474,20 @@ async def edit_image_save(message: Message, state: FSMContext) -> None:
     return
 
   old_image = product.get("image_url")
-  updated = update_product(
-    product_id,
-    {"image_url": image_url, "image_urls": [image_url]},
-  )
+  try:
+    updated = update_product(
+      product_id,
+      {"image_url": image_url, "image_urls": [image_url]},
+    )
+  except Exception as error:
+    logger.exception("Rasm bazaga yozilmadi: %s", error)
+    await state.clear()
+    await message.answer(
+      "❌ Rasm bazaga yozilmadi. Qayta urinib ko'ring.",
+      reply_markup=admin_reply_keyboard(),
+    )
+    return
+
   if not updated:
     await state.clear()
     await message.answer("Xatolik.", reply_markup=admin_reply_keyboard())
@@ -496,7 +495,7 @@ async def edit_image_save(message: Message, state: FSMContext) -> None:
 
   if (
     old_image
-    and not str(old_image).startswith(("http://", "https://"))
+    and not str(old_image).startswith(("http://", "https://", "tgfile:"))
     and old_image != image_url
   ):
     old_path = IMAGES_DIR / old_image
@@ -507,13 +506,8 @@ async def edit_image_save(message: Message, state: FSMContext) -> None:
         logger.warning("Eski rasm o'chirilmadi: %s", old_path)
 
   await state.clear()
-  photo_input = (
-    URLInputFile(image_url)
-    if str(image_url).startswith(("http://", "https://"))
-    else FSInputFile(IMAGES_DIR / image_url)
-  )
   await message.answer_photo(
-    photo=photo_input,
+    photo=photo.file_id,
     caption=f"✅ Rasm yangilandi: <b>{updated['name']}</b>",
     reply_markup=admin_reply_keyboard(),
   )

@@ -11,6 +11,7 @@ from supabase_db import upload_product_image
 logger = logging.getLogger(__name__)
 
 IMAGES_DIR = Path(__file__).parent.parent / "images"
+TG_FILE_PREFIX = "tgfile:"
 
 
 def slugify(name: str) -> str:
@@ -27,8 +28,9 @@ def make_image_filename(product_name: str) -> str:
 async def save_telegram_photo(bot: Bot, file_id: str, product_name: str) -> str:
   """Download Telegram photo and upload to Supabase Storage.
 
-  Returns a public HTTPS URL stored in products.image_url.
-  Falls back to local images/ only if Storage upload fails (local/dev).
+  Returns a public HTTPS URL when Storage works.
+  Falls back to tgfile:<file_id> so the bot can still show the photo later
+  (Heroku disk is ephemeral, so local files are not used as fallback).
   """
   filename = make_image_filename(product_name)
   buffer = BytesIO()
@@ -42,9 +44,6 @@ async def save_telegram_photo(bot: Bot, file_id: str, product_name: str) -> str:
     return upload_product_image(content, filename, "image/jpeg")
   except Exception as error:
     logger.warning(
-      "Supabase Storage'ga yuklanmadi, lokal saqlanadi: %s", error
+      "Supabase Storage'ga yuklanmadi, Telegram file_id saqlanadi: %s", error
     )
-    IMAGES_DIR.mkdir(exist_ok=True)
-    path = IMAGES_DIR / filename
-    path.write_bytes(content)
-    return filename
+    return f"{TG_FILE_PREFIX}{file_id}"
