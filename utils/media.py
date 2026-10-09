@@ -1,21 +1,22 @@
 from pathlib import Path
 
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import FSInputFile, Message
+from aiogram.types import FSInputFile, Message, URLInputFile
 
 from supabase_db import format_price
 
 IMAGES_DIR = Path(__file__).parent.parent / "images"
 
 
-def get_image_path(product: dict) -> Path | None:
-  filename = product.get("image_url")
-  if not filename:
+def get_product_photo(product: dict) -> FSInputFile | URLInputFile | None:
+  image_url = product.get("image_url")
+  if not image_url:
     return None
-  if str(filename).startswith("http"):
-    return None
-  path = IMAGES_DIR / filename
-  return path if path.is_file() else None
+  value = str(image_url).strip()
+  if value.startswith(("http://", "https://")):
+    return URLInputFile(value)
+  path = IMAGES_DIR / value
+  return FSInputFile(path) if path.is_file() else None
 
 
 def product_caption(product: dict, *, for_client: bool = True) -> str:
@@ -62,18 +63,22 @@ async def send_product_card(
   *,
   for_client: bool = True,
 ) -> Message:
-  path = get_image_path(product)
+  photo = get_product_photo(product)
   caption = product_caption(product, for_client=for_client)
 
-  if path:
+  if photo:
     try:
       await message.delete()
     except TelegramBadRequest:
       pass
-    return await message.answer_photo(
-      photo=FSInputFile(path),
-      caption=caption,
-      reply_markup=reply_markup,
-    )
+    try:
+      return await message.answer_photo(
+        photo=photo,
+        caption=caption,
+        reply_markup=reply_markup,
+      )
+    except TelegramBadRequest:
+      # URL/fayl ochilmasa — hech bo'lmasa matn kartochka
+      return await replace_with_text(message, caption, reply_markup)
 
   return await replace_with_text(message, caption, reply_markup)

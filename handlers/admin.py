@@ -2,7 +2,13 @@ import logging
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import BufferedInputFile, CallbackQuery, FSInputFile, Message
+from aiogram.types import (
+  BufferedInputFile,
+  CallbackQuery,
+  FSInputFile,
+  Message,
+  URLInputFile,
+)
 
 from config import ORDER_STATUS_LABELS, TX_TYPE_LABELS
 from supabase_db import (
@@ -139,7 +145,7 @@ async def add_image(message: Message, state: FSMContext) -> None:
 
   photo = message.photo[-1]
   try:
-    image_path = await save_telegram_photo(message.bot, photo.file_id, name)
+    image_url = await save_telegram_photo(message.bot, photo.file_id, name)
   except Exception as error:
     logger.exception("Rasm yuklab olinmadi: %s", error)
     await message.answer("❌ Rasm saqlanmadi. Qayta yuboring:")
@@ -151,7 +157,8 @@ async def add_image(message: Message, state: FSMContext) -> None:
       description=data.get("description", ""),
       price=int(data.get("price", 0)),
       quantity=int(data.get("quantity", 0)),
-      image_url=image_path,
+      image_url=image_url,
+      image_urls=[image_url],
       admin_id=message.from_user.id,
     )
   except Exception as error:
@@ -163,8 +170,13 @@ async def add_image(message: Message, state: FSMContext) -> None:
     return
 
   await state.clear()
+  photo_input = (
+    URLInputFile(image_url)
+    if str(image_url).startswith(("http://", "https://"))
+    else FSInputFile(IMAGES_DIR / image_url)
+  )
   await message.answer_photo(
-    photo=FSInputFile(IMAGES_DIR / image_path),
+    photo=photo_input,
     caption=(
       f"✅ <b>Mahsulot qo'shildi!</b>\n\n"
       f"🛍 {product['name']}\n"
@@ -464,7 +476,7 @@ async def edit_image_save(message: Message, state: FSMContext) -> None:
 
   photo = message.photo[-1]
   try:
-    image_path = await save_telegram_photo(
+    image_url = await save_telegram_photo(
       message.bot, photo.file_id, product["name"]
     )
   except Exception as error:
@@ -473,13 +485,20 @@ async def edit_image_save(message: Message, state: FSMContext) -> None:
     return
 
   old_image = product.get("image_url")
-  updated = update_product(product_id, {"image_url": image_path})
+  updated = update_product(
+    product_id,
+    {"image_url": image_url, "image_urls": [image_url]},
+  )
   if not updated:
     await state.clear()
     await message.answer("Xatolik.", reply_markup=admin_reply_keyboard())
     return
 
-  if old_image and not str(old_image).startswith("http") and old_image != image_path:
+  if (
+    old_image
+    and not str(old_image).startswith(("http://", "https://"))
+    and old_image != image_url
+  ):
     old_path = IMAGES_DIR / old_image
     if old_path.is_file():
       try:
@@ -488,8 +507,13 @@ async def edit_image_save(message: Message, state: FSMContext) -> None:
         logger.warning("Eski rasm o'chirilmadi: %s", old_path)
 
   await state.clear()
+  photo_input = (
+    URLInputFile(image_url)
+    if str(image_url).startswith(("http://", "https://"))
+    else FSInputFile(IMAGES_DIR / image_url)
+  )
   await message.answer_photo(
-    photo=FSInputFile(IMAGES_DIR / image_path),
+    photo=photo_input,
     caption=f"✅ Rasm yangilandi: <b>{updated['name']}</b>",
     reply_markup=admin_reply_keyboard(),
   )
