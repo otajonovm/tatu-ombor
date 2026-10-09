@@ -18,11 +18,13 @@ LEGACY_PRODUCT_FIELDS = (
   "id,name,description,price,quantity,image_url,is_active,created_at"
 )
 ORDER_FIELDS = (
-  "id,user_id,user_name,phone_number,comment,total_price,status,created_at"
+  "id,user_id,user_name,phone_number,comment,total_price,status,"
+  "stock_reserved,created_at"
 )
 LEGACY_ORDER_FIELDS = (
   "id,user_id,user_name,phone_number,total_price,status,created_at"
 )
+RESERVE_MARK = "\u2060RSV\u2060"
 
 _client: Client | None = None
 _carts: dict[int, dict[int, int]] = {}
@@ -62,7 +64,10 @@ def _normalise_products(products: list[dict]) -> list[dict]:
 
 
 def _normalise_order(order: dict) -> dict:
-  order.setdefault("comment", "")
+  comment = order.get("comment") or ""
+  reserved = bool(order.get("stock_reserved")) or RESERVE_MARK in comment
+  order["stock_reserved"] = reserved
+  order["comment"] = comment.replace(RESERVE_MARK, "")
   return order
 
 
@@ -78,7 +83,7 @@ def init_db(default_products: list[dict]) -> None:
     )
   except Exception as error:
     raise RuntimeError(
-      "Supabase jadvallari topilmadi. Avval supabase/schema.sql faylini "
+      "Supabase jadvallari topilmadi. Avval supabase/apply_updates.sql faylini "
       "Supabase SQL Editor'da ishga tushiring."
     ) from error
 
@@ -121,9 +126,11 @@ def init_db(default_products: list[dict]) -> None:
       except Exception as legacy_error:
         logger.warning(
           "Supabase yozishni blokladi: %s. Yangilangan "
-          "supabase/schema.sql faylini SQL Editor'da ishga tushiring.",
+          "supabase/apply_updates.sql faylini SQL Editor'da ishga tushiring.",
           legacy_error,
         )
+
+  archive_sold_out_products()
 
 
 def format_price(amount: int) -> str:
@@ -173,7 +180,45 @@ def upload_product_image(content: bytes, filename: str, content_type: str) -> st
 # ── Products ───────────────────────────────────────────────
 
 
+def archive_sold_out_products() -> None:
+  """Qoldiq 0 bo'lgan faol mahsulotlarni darhol arxivlaydi."""
+  try:
+    _db().table("products").update({"is_active": False}).eq(
+      "is_active", True
+    ).lte("quantity", 0).execute()
+  except Exception as error:
+    logger.warning("Tugagan mahsulotlar arxivlanmadi: %s", error)
+
+
+def _quantity_payload(quantity: int, *, reactivate: bool = False) -> dict:
+  qty = max(0, int(quantity))
+  payload: dict[str, Any] = {"quantity": qty}
+  if qty <= 0:
+    payload["is_active"] = False
+  elif reactivate:
+    payload["is_active"] = True
+  return payload
+
+
+def _set_product_quantity(
+  product_id: int,
+  quantity: int,
+  *,
+  reactivate: bool = False,
+  min_current: int | None = None,
+  expected_quantity: int | None = None,
+) -> dict | None:
+  payload = _quantity_payload(quantity, reactivate=reactivate)
+  query = _db().table("products").update(payload).eq("id", product_id)
+  if expected_quantity is not None:
+    query = query.eq("quantity", expected_quantity)
+  elif min_current is not None:
+    query = query.gte("quantity", min_current)
+  return _one(query.execute().data)
+
+
 def get_active_products() -> list[dict]:
+  archive_sold_out_products()
   try:
     response = (
       _db()
@@ -276,6 +321,7 @@ def add_product(
     "price": price,
     "quantity": quantity,
     "image_url": image_url,
+    "is_active": quantity > 0,
   }
   full_row = {
     **base_row,
@@ -329,6 +375,11 @@ def update_product(product_id: int, updates: dict) -> dict | None:
   if not updates:
     return get_product(product_id)
   payload = dict(updates)
+  if "quantity" in payload:
+    qty = max(0, int(payload["quantity"]))
+    payload.update(
+      _quantity_payload(qty, reactivate=qty > 0 and "is_active" not in payload)
+    )
   # Ba'zi projectlarda image_urls/category hali yo'q — oddiy ustunlar bilan qayta urinish
   optional_cols = ("image_urls", "category", "sizes", "colors")
   try:
@@ -397,16 +448,33 @@ def stock_in(
 ) -> dict | None:
   if quantity <= 0:
     return None
-  response = _db().rpc(
-    "shop_stock_in",
-    {
-      "p_product_id": product_id,
-      "p_quantity": quantity,
-      "p_admin_id": admin_id,
-      "p_comment": comment,
-    },
-  ).execute()
-  return _one(response.data)
+  current = get_product(product_id)
+  if not current:
+    return None
+  try:
+    updated = _set_product_quantity(
+      product_id,
+      int(current["quantity"]) + int(quantity),
+      reactivate=True,
+    )
+  except Exception as error:
+    logger.exception("Kirim yangilanmadi: %s", error)
+    return None
+  if not updated:
+    return None
+  try:
+    _db().table("transactions").insert(
+      {
+        "product_id": product_id,
+        "type": "kirim",
+        "quantity": quantity,
+        "admin_id": admin_id,
+        "comment": comment,
+      }
+    ).execute()
+  except Exception as error:
+    logger.warning("Kirim tranzaksiyasi yozilmadi: %s", error)
+  return _normalise_product(updated)
 
 
 def write_off(
@@ -427,7 +495,10 @@ def write_off(
     },
   ).execute()
   result = _one(response.data)
-  return result if result and result.get("ok", True) else None
+  if result and result.get("ok", True) is not False:
+    archive_sold_out_products()
+    return result
+  return None
 
 
 # ── Cart (diskka saqlanadi — bot qayta ishga tushsa ham qoladi) ──
@@ -515,6 +586,100 @@ def cart_details(user_id: int) -> tuple[list[dict], int]:
 # ── Orders ─────────────────────────────────────────────────
 
 
+def _order_is_reserved(order: dict | None) -> bool:
+  if not order:
+    return False
+  return bool(order.get("stock_reserved"))
+
+
+def _mark_order_reserved(order_id: int) -> None:
+  try:
+    _db().table("orders").update({"stock_reserved": True}).eq(
+      "id", order_id
+    ).execute()
+    return
+  except Exception as error:
+    logger.warning("stock_reserved yozilmadi: %s", error)
+  order = get_order(order_id)
+  comment = (order or {}).get("comment") or ""
+  if RESERVE_MARK in comment:
+    return
+  try:
+    _db().table("orders").update(
+      {"comment": f"{RESERVE_MARK}{comment}"}
+    ).eq("id", order_id).execute()
+  except Exception as error:
+    logger.warning("Bron belgisini yozib bo'lmadi: %s", error)
+
+
+def _release_stock(items: list[dict]) -> None:
+  for item in items:
+    product = get_product(int(item["product_id"]))
+    if not product:
+      continue
+    new_qty = int(product["quantity"]) + int(item["quantity"])
+    _set_product_quantity(product["id"], new_qty, reactivate=new_qty > 0)
+
+
+def _reserve_stock_for_order(order_id: int, items: list[dict]) -> bool:
+  reserved: list[dict] = []
+  for item in items:
+    product_id = int(item["product_id"])
+    qty = int(item["quantity"])
+    product = get_product(product_id)
+    if (
+      not product
+      or not product.get("is_active", True)
+      or int(product["quantity"]) < qty
+    ):
+      _release_stock(reserved)
+      return False
+    current_qty = int(product["quantity"])
+    updated = _set_product_quantity(
+      product_id,
+      current_qty - qty,
+      expected_quantity=current_qty,
+    )
+    if not updated:
+      _release_stock(reserved)
+      return False
+    reserved.append({"product_id": product_id, "quantity": qty})
+  _mark_order_reserved(order_id)
+  archive_sold_out_products()
+  return True
+
+
+def _write_sale_transactions(
+  order_id: int,
+  items: list[dict],
+  admin_id: int | None,
+  comment: str,
+) -> None:
+  for item in items:
+    try:
+      _db().table("transactions").insert(
+        {
+          "product_id": int(item["product_id"]),
+          "type": "sotuv",
+          "quantity": int(item["quantity"]),
+          "admin_id": admin_id,
+          "comment": comment,
+        }
+      ).execute()
+    except Exception as error:
+      logger.warning("Sotuv yozuvi yozilmadi: %s", error)
+
+
+def _set_order_status(order_id: int, status: str, extra: dict | None = None) -> None:
+  payload = {"status": status, **(extra or {})}
+  try:
+    _db().table("orders").update(payload).eq("id", order_id).execute()
+  except Exception as error:
+    logger.warning("Buyurtma statusini yozib bo'lmadi (%s): %s", payload, error)
+    fallback = {k: v for k, v in payload.items() if k == "status"}
+    _db().table("orders").update(fallback).eq("id", order_id).execute()
+
+
 def _create_order_direct(
   user_id: int,
   user_name: str | None,
@@ -588,7 +753,14 @@ def _create_order_direct(
         }
       ).execute()
 
-  return _normalise_order(order)
+  if not _reserve_stock_for_order(order["id"], prepared):
+    try:
+      _db().table("orders").delete().eq("id", order["id"]).execute()
+    except Exception:
+      _set_order_status(order["id"], "rejected")
+    return None
+
+  return _normalise_order(get_order(order["id"]) or order)
 
 
 def create_order(
@@ -756,21 +928,37 @@ def get_order_items(order_id: int) -> list[dict]:
 
 
 def approve_order(order_id: int, admin_id: int) -> tuple[bool, str]:
-  response = _db().rpc(
-    "shop_approve_order",
-    {"p_order_id": order_id, "p_admin_id": admin_id},
-  ).execute()
-  result = _one(response.data) or {}
-  return bool(result.get("ok")), result.get("message", "Noma'lum xatolik.")
+  order = get_order(order_id)
+  if not order:
+    return False, "Buyurtma topilmadi."
+  if order["status"] != "pending":
+    return False, "Buyurtma allaqachon ko'rib chiqilgan."
+  items = get_order_items(order_id)
+  if not items:
+    return False, "Buyurtmada mahsulot yo'q."
+
+  if not _order_is_reserved(order):
+    if not _reserve_stock_for_order(order_id, items):
+      return False, "Mahsulot qoldig'i yetarli emas."
+  _write_sale_transactions(
+    order_id, items, admin_id, f"Buyurtma #{order_id}"
+  )
+  _set_order_status(order_id, "approved")
+  archive_sold_out_products()
+  return True, "Buyurtma qabul qilindi."
 
 
 def reject_order(order_id: int) -> tuple[bool, str]:
-  response = _db().rpc(
-    "shop_reject_order",
-    {"p_order_id": order_id},
-  ).execute()
-  result = _one(response.data) or {}
-  return bool(result.get("ok")), result.get("message", "Noma'lum xatolik.")
+  order = get_order(order_id)
+  if not order:
+    return False, "Buyurtma topilmadi."
+  if order["status"] != "pending":
+    return False, "Buyurtma allaqachon ko'rib chiqilgan."
+  items = get_order_items(order_id)
+  if _order_is_reserved(order):
+    _release_stock(items)
+  _set_order_status(order_id, "rejected")
+  return True, "Buyurtma bekor qilindi."
 
 
 # ── Payments (Telegram / Click + Payme) ─────────────────────
@@ -834,6 +1022,9 @@ def validate_order_for_payment(order_id: int) -> tuple[bool, str]:
   if not items:
     return False, "Buyurtmada mahsulot yo'q."
 
+  if _order_is_reserved(order):
+    return True, "OK"
+
   for item in items:
     product = get_product(int(item["product_id"]))
     name = item.get("product_name") or (product or {}).get("name") or "Mahsulot"
@@ -869,34 +1060,14 @@ def _mark_order_paid_direct(
     return False, message
 
   items = get_order_items(order_id)
-  for item in items:
-    product_id = int(item["product_id"])
-    qty = int(item["quantity"])
-    product = get_product(product_id)
-    if not product or not product.get("is_active", True):
+  order = get_order(order_id)
+  if not _order_is_reserved(order):
+    if not _reserve_stock_for_order(order_id, items):
       return False, PAYMENT_STOCK_ERROR
-    new_qty = int(product["quantity"]) - qty
-    if new_qty < 0:
-      return False, PAYMENT_STOCK_ERROR
-    updated = (
-      _db()
-      .table("products")
-      .update({"quantity": new_qty})
-      .eq("id", product_id)
-      .gte("quantity", qty)
-      .execute()
-    )
-    if not updated.data:
-      return False, PAYMENT_STOCK_ERROR
-    _db().table("transactions").insert(
-      {
-        "product_id": product_id,
-        "type": "sotuv",
-        "quantity": qty,
-        "admin_id": None,
-        "comment": payment_comment(order_id, provider),
-      }
-    ).execute()
+  _write_sale_transactions(
+    order_id, items, None, payment_comment(order_id, provider)
+  )
+  archive_sold_out_products()
 
   updates: dict[str, Any] = {"status": "paid"}
   if payment_charge_id:

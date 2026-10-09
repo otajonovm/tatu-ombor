@@ -159,7 +159,7 @@ async def add_image(message: Message, state: FSMContext) -> None:
     logger.exception("Mahsulot qo'shilmadi: %s", error)
     await message.answer(
       "❌ Mahsulot bazaga yozilmadi. Qayta urinib ko'ring yoki "
-      "supabase/schema.sql ni yangilang."
+      "supabase/apply_updates.sql ni SQL Editor'da ishga tushiring."
     )
     return
 
@@ -220,7 +220,7 @@ async def add_image_invalid(message: Message) -> None:
 @router.message(F.text == BTN_STOCK_IN)
 async def start_stock_in(message: Message, state: FSMContext) -> None:
   await state.clear()
-  products = get_all_products(include_inactive=False)
+  products = get_all_products(include_inactive=True)
   if not products:
     await message.answer("Mahsulotlar yo'q.", reply_markup=admin_reply_keyboard())
     return
@@ -271,17 +271,29 @@ async def stock_comment(message: Message, state: FSMContext) -> None:
   if comment == "-":
     comment = None
 
-  result = stock_in(product_id, quantity, message.from_user.id, comment)
+  previous = get_product(product_id) if product_id else None
+  try:
+    result = stock_in(product_id, quantity, message.from_user.id, comment)
+  except Exception as error:
+    logger.exception("Kirim xato: %s", error)
+    result = None
   await state.clear()
   if not result:
-    await message.answer("❌ Kirim amalga oshmadi.", reply_markup=admin_reply_keyboard())
+    await message.answer(
+      "❌ Kirim amalga oshmadi. Qayta urinib ko'ring.",
+      reply_markup=admin_reply_keyboard(),
+    )
     return
 
+  restored = ""
+  if previous and not previous.get("is_active") and result.get("is_active"):
+    restored = "\n♻️ Mahsulot katalogga qaytarildi."
   await message.answer(
     f"✅ Kirim qilindi!\n\n"
     f"🛍 <b>{result['name']}</b>\n"
     f"➕ +{quantity} dona\n"
-    f"📦 Yangi qoldiq: <b>{result['quantity']}</b>",
+    f"📦 Yangi qoldiq: <b>{result['quantity']}</b>"
+    f"{restored}",
     reply_markup=admin_reply_keyboard(),
   )
 
@@ -425,13 +437,20 @@ async def edit_qty_save(message: Message, state: FSMContext) -> None:
     await message.answer("❌ Miqdor noto'g'ri. Qayta kiriting:")
     return
   data = await state.get_data()
+  previous = get_product(data["product_id"])
   product = update_product(data["product_id"], {"quantity": int(text)})
   await state.clear()
   if not product:
     await message.answer("Xatolik.", reply_markup=admin_reply_keyboard())
     return
+  extra = ""
+  if int(product.get("quantity") or 0) <= 0:
+    extra = "\n🗄 Qoldiq tugadi — mahsulot arxivlandi va katalogdan olib tashlandi."
+  elif previous and not previous.get("is_active") and product.get("is_active"):
+    extra = "\n♻️ Mahsulot katalogga qaytarildi."
   await message.answer(
-    f"✅ Miqdor yangilandi: <b>{product['name']}</b> — {product['quantity']} dona",
+    f"✅ Miqdor yangilandi: <b>{product['name']}</b> — {product['quantity']} dona"
+    f"{extra}",
     reply_markup=admin_reply_keyboard(),
   )
 

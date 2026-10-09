@@ -1,6 +1,7 @@
--- TATU Brend Do'koni — Supabase SQL Editor
--- Bu migratsiya mavjud ma'lumotlarni o'chirmaydi.
--- Supabase SQL Editor'da to'liq skriptni ishga tushiring.
+-- TATU Brend Do'koni — to'liq sxema (yangi loyiha uchun)
+-- Mavjud bazaga bu faylni emas, apply_updates.sql ni ishga tushiring.
+
+-- ── 1. Jadvallar ──────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS products (
   id          SERIAL PRIMARY KEY,
@@ -18,16 +19,17 @@ CREATE TABLE IF NOT EXISTS products (
 );
 
 CREATE TABLE IF NOT EXISTS orders (
-  id           SERIAL PRIMARY KEY,
-  user_id      BIGINT NOT NULL,
-  user_name    TEXT,
-  phone_number TEXT NOT NULL,
-  comment      TEXT NOT NULL DEFAULT '',
-  total_price  INTEGER NOT NULL DEFAULT 0 CHECK (total_price >= 0),
-  status       TEXT NOT NULL DEFAULT 'pending'
-                 CHECK (status IN ('pending', 'paid', 'approved', 'rejected')),
+  id                SERIAL PRIMARY KEY,
+  user_id           BIGINT NOT NULL,
+  user_name         TEXT,
+  phone_number      TEXT NOT NULL,
+  comment           TEXT NOT NULL DEFAULT '',
+  total_price       INTEGER NOT NULL DEFAULT 0 CHECK (total_price >= 0),
+  status            TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending', 'paid', 'approved', 'rejected')),
   payment_charge_id TEXT,
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  stock_reserved    BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS order_items (
@@ -51,37 +53,39 @@ CREATE TABLE IF NOT EXISTS transactions (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_products_active ON products(is_active);
-CREATE INDEX idx_orders_user_id ON orders(user_id);
-CREATE INDEX idx_orders_status ON orders(status);
-CREATE INDEX idx_orders_created ON orders(created_at DESC);
-CREATE INDEX idx_order_items_order_id ON order_items(order_id);
-CREATE INDEX idx_transactions_product_id ON transactions(product_id);
-CREATE INDEX idx_transactions_created ON transactions(created_at DESC);
+-- ── 2. Indekslar ──────────────────────────────────────────
 
-ALTER TABLE products ADD COLUMN IF NOT EXISTS image_urls JSONB NOT NULL DEFAULT '[]'::jsonb;
-ALTER TABLE products ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'suvenir';
-ALTER TABLE products ADD COLUMN IF NOT EXISTS sizes JSONB NOT NULL DEFAULT '[]'::jsonb;
-ALTER TABLE products ADD COLUMN IF NOT EXISTS colors JSONB NOT NULL DEFAULT '[]'::jsonb;
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS comment TEXT NOT NULL DEFAULT '';
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_charge_id TEXT;
-ALTER TABLE order_items ADD COLUMN IF NOT EXISTS size TEXT;
-ALTER TABLE order_items ADD COLUMN IF NOT EXISTS color TEXT;
+CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_product_id ON transactions(product_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at DESC);
 
--- Telegram Payments: paid status
-DO $$
+-- ── 3. Trigger: qoldiq 0 bo'lsa arxiv ─────────────────────
+
+CREATE OR REPLACE FUNCTION shop_archive_if_empty()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
 BEGIN
-  ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
-  ALTER TABLE orders
-    ADD CONSTRAINT orders_status_check
-    CHECK (status IN ('pending', 'paid', 'approved', 'rejected'));
-EXCEPTION
-  WHEN others THEN
-    NULL;
-END $$;
+  IF NEW.quantity <= 0 THEN
+    NEW.quantity := 0;
+    NEW.is_active := FALSE;
+  END IF;
+  RETURN NEW;
+END;
+$$;
 
--- REST API orqali atomik amallar (supabase-py RPC)
+DROP TRIGGER IF EXISTS trg_products_archive_if_empty ON products;
+CREATE TRIGGER trg_products_archive_if_empty
+BEFORE INSERT OR UPDATE OF quantity ON products
+FOR EACH ROW
+EXECUTE PROCEDURE shop_archive_if_empty();
+
+-- ── 4. RPC: kirim / hisobdan chiqarish ────────────────────
 
 CREATE OR REPLACE FUNCTION shop_stock_in(
   p_product_id INTEGER,
@@ -102,12 +106,17 @@ BEGIN
   INSERT INTO transactions (product_id, type, quantity, admin_id, comment)
   SELECT id, 'kirim', p_quantity, p_admin_id, p_comment
   FROM products
-  WHERE id = p_product_id AND is_active = TRUE;
+  WHERE id = p_product_id;
+
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
 
   RETURN QUERY
   UPDATE products
-  SET quantity = quantity + p_quantity
-  WHERE id = p_product_id AND is_active = TRUE
+  SET quantity = quantity + p_quantity,
+      is_active = TRUE
+  WHERE id = p_product_id
   RETURNING *;
 END;
 $$;
@@ -130,22 +139,21 @@ BEGIN
 
   RETURN QUERY
   UPDATE products
-  SET quantity = quantity - p_quantity
+  SET quantity = quantity - p_quantity,
+      is_active = (quantity - p_quantity > 0)
   WHERE id = p_product_id AND quantity >= p_quantity
   RETURNING *;
 
   IF FOUND THEN
     INSERT INTO transactions (product_id, type, quantity, admin_id, comment)
     VALUES (
-      p_product_id,
-      'hisobdan_chiqarish',
-      p_quantity,
-      p_admin_id,
-      p_comment
+      p_product_id, 'hisobdan_chiqarish', p_quantity, p_admin_id, p_comment
     );
   END IF;
 END;
 $$;
+
+-- ── 5. RPC: buyurtma ──────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION shop_create_order(
   p_user_id BIGINT,
@@ -175,7 +183,8 @@ BEGIN
   LOOP
     SELECT * INTO v_product
     FROM products
-    WHERE id = v_item.product_id AND is_active = TRUE;
+    WHERE id = v_item.product_id AND is_active = TRUE
+    FOR UPDATE;
 
     IF NOT FOUND OR v_item.quantity <= 0
        OR v_product.quantity < v_item.quantity THEN
@@ -211,6 +220,27 @@ BEGIN
     );
   END LOOP;
 
+  FOR v_item IN
+    SELECT * FROM jsonb_to_recordset(p_items)
+      AS x(product_id INTEGER, quantity INTEGER)
+  LOOP
+    UPDATE products
+    SET quantity = quantity - v_item.quantity,
+        is_active = (quantity - v_item.quantity > 0)
+    WHERE id = v_item.product_id
+      AND is_active = TRUE
+      AND quantity >= v_item.quantity;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'stock changed during order create';
+    END IF;
+  END LOOP;
+
+  UPDATE orders
+  SET stock_reserved = TRUE
+  WHERE id = v_order.id
+  RETURNING * INTO v_order;
+
   RETURN to_jsonb(v_order);
 END;
 $$;
@@ -229,10 +259,7 @@ DECLARE
   v_item RECORD;
   v_product products%ROWTYPE;
 BEGIN
-  SELECT * INTO v_order
-  FROM orders
-  WHERE id = p_order_id
-  FOR UPDATE;
+  SELECT * INTO v_order FROM orders WHERE id = p_order_id FOR UPDATE;
 
   IF NOT FOUND THEN
     RETURN jsonb_build_object('ok', FALSE, 'message', 'Buyurtma topilmadi.');
@@ -244,54 +271,60 @@ BEGIN
     );
   END IF;
 
-  FOR v_item IN
-    SELECT oi.product_id, oi.quantity, p.name
-    FROM order_items oi
-    JOIN products p ON p.id = oi.product_id
-    WHERE oi.order_id = p_order_id
-  LOOP
-    SELECT * INTO v_product
-    FROM products
-    WHERE id = v_item.product_id
-    FOR UPDATE;
+  IF NOT COALESCE(v_order.stock_reserved, FALSE) THEN
+    FOR v_item IN
+      SELECT oi.product_id, oi.quantity, p.name
+      FROM order_items oi
+      JOIN products p ON p.id = oi.product_id
+      WHERE oi.order_id = p_order_id
+    LOOP
+      SELECT * INTO v_product
+      FROM products
+      WHERE id = v_item.product_id
+      FOR UPDATE;
 
-    IF v_product.quantity < v_item.quantity THEN
-      RETURN jsonb_build_object(
-        'ok', FALSE,
-        'message', format(
-          '«%s» uchun qoldiq yetarli emas (%s/%s).',
-          v_item.name, v_product.quantity, v_item.quantity
-        )
-      );
+      IF v_product.quantity < v_item.quantity THEN
+        RETURN jsonb_build_object(
+          'ok', FALSE,
+          'message', format(
+            '«%s» uchun qoldiq yetarli emas (%s/%s).',
+            v_item.name, v_product.quantity, v_item.quantity
+          )
+        );
+      END IF;
+    END LOOP;
+  END IF;
+
+  FOR v_item IN
+    SELECT product_id, quantity FROM order_items WHERE order_id = p_order_id
+  LOOP
+    IF NOT COALESCE(v_order.stock_reserved, FALSE) THEN
+      UPDATE products
+      SET quantity = quantity - v_item.quantity,
+          is_active = (quantity - v_item.quantity > 0)
+      WHERE id = v_item.product_id AND quantity >= v_item.quantity;
+
+      IF NOT FOUND THEN
+        RETURN jsonb_build_object(
+          'ok', FALSE,
+          'message', 'Mahsulot qoldig''i yetarli emas.'
+        );
+      END IF;
+    ELSE
+      UPDATE products
+      SET is_active = FALSE
+      WHERE id = v_item.product_id AND quantity <= 0;
     END IF;
-  END LOOP;
 
-  FOR v_item IN
-    SELECT product_id, quantity
-    FROM order_items
-    WHERE order_id = p_order_id
-  LOOP
-    UPDATE products
-    SET quantity = quantity - v_item.quantity
-    WHERE id = v_item.product_id;
-
-    INSERT INTO transactions (
-      product_id, type, quantity, admin_id, comment
-    )
+    INSERT INTO transactions (product_id, type, quantity, admin_id, comment)
     VALUES (
-      v_item.product_id,
-      'sotuv',
-      v_item.quantity,
-      p_admin_id,
+      v_item.product_id, 'sotuv', v_item.quantity, p_admin_id,
       format('Buyurtma #%s', p_order_id)
     );
   END LOOP;
 
   UPDATE orders SET status = 'approved' WHERE id = p_order_id;
-  RETURN jsonb_build_object(
-    'ok', TRUE,
-    'message', 'Buyurtma qabul qilindi.'
-  );
+  RETURN jsonb_build_object('ok', TRUE, 'message', 'Buyurtma qabul qilindi.');
 END;
 $$;
 
@@ -302,34 +335,42 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_status TEXT;
+  v_order orders%ROWTYPE;
+  v_item RECORD;
 BEGIN
-  SELECT status INTO v_status
-  FROM orders
-  WHERE id = p_order_id
-  FOR UPDATE;
+  SELECT * INTO v_order FROM orders WHERE id = p_order_id FOR UPDATE;
 
   IF NOT FOUND THEN
     RETURN jsonb_build_object('ok', FALSE, 'message', 'Buyurtma topilmadi.');
   END IF;
-  IF v_status <> 'pending' THEN
+  IF v_order.status <> 'pending' THEN
     RETURN jsonb_build_object(
       'ok', FALSE,
       'message', 'Buyurtma allaqachon ko''rib chiqilgan.'
     );
   END IF;
 
-  UPDATE orders SET status = 'rejected' WHERE id = p_order_id;
-  RETURN jsonb_build_object(
-    'ok', TRUE,
-    'message', 'Buyurtma bekor qilindi.'
-  );
+  IF COALESCE(v_order.stock_reserved, FALSE) THEN
+    FOR v_item IN
+      SELECT product_id, quantity FROM order_items WHERE order_id = p_order_id
+    LOOP
+      UPDATE products
+      SET quantity = quantity + v_item.quantity,
+          is_active = (quantity + v_item.quantity > 0)
+      WHERE id = v_item.product_id;
+    END LOOP;
+  END IF;
+
+  UPDATE orders
+  SET status = 'rejected', stock_reserved = FALSE
+  WHERE id = p_order_id;
+
+  RETURN jsonb_build_object('ok', TRUE, 'message', 'Buyurtma bekor qilindi.');
 END;
 $$;
 
 DROP FUNCTION IF EXISTS shop_mark_order_paid(INTEGER, TEXT);
 
--- Telegram Payments muvaffaqiyatli to'lov: status=paid + ombor kamaytirish
 CREATE OR REPLACE FUNCTION shop_mark_order_paid(
   p_order_id INTEGER,
   p_payment_charge_id TEXT DEFAULT NULL,
@@ -351,15 +392,11 @@ BEGIN
     ELSE 'To''lov'
   END;
 
-  SELECT * INTO v_order
-  FROM orders
-  WHERE id = p_order_id
-  FOR UPDATE;
+  SELECT * INTO v_order FROM orders WHERE id = p_order_id FOR UPDATE;
 
   IF NOT FOUND THEN
     RETURN jsonb_build_object('ok', FALSE, 'message', 'Buyurtma topilmadi.');
   END IF;
-
   IF v_order.status = 'paid' THEN
     RETURN jsonb_build_object(
       'ok', TRUE,
@@ -367,73 +404,56 @@ BEGIN
       'order', to_jsonb(v_order)
     );
   END IF;
-
   IF v_order.status <> 'pending' THEN
     RETURN jsonb_build_object(
       'ok', FALSE,
       'message', 'Bu buyurtma uchun to''lov qabul qilinmaydi.'
     );
   END IF;
-
   IF (SELECT COUNT(*) FROM order_items WHERE order_id = p_order_id) = 0 THEN
-    RETURN jsonb_build_object(
-      'ok', FALSE,
-      'message', 'Buyurtmada mahsulot yo''q.'
-    );
+    RETURN jsonb_build_object('ok', FALSE, 'message', 'Buyurtmada mahsulot yo''q.');
   END IF;
 
-  IF (
-    SELECT COUNT(*) FROM order_items WHERE order_id = p_order_id
-  ) <> (
-    SELECT COUNT(*)
-    FROM order_items oi
-    JOIN products p ON p.id = oi.product_id
-    WHERE oi.order_id = p_order_id
-  ) THEN
-    RETURN jsonb_build_object(
-      'ok', FALSE,
-      'message', 'Kechirasiz, tanlangan mahsulot omborda yetarli emas.'
-    );
+  IF NOT COALESCE(v_order.stock_reserved, FALSE) THEN
+    FOR v_item IN
+      SELECT oi.product_id, oi.quantity, p.is_active, p.quantity AS stock
+      FROM order_items oi
+      JOIN products p ON p.id = oi.product_id
+      WHERE oi.order_id = p_order_id
+      FOR UPDATE OF p
+    LOOP
+      IF v_item.is_active IS NOT TRUE OR v_item.stock < v_item.quantity THEN
+        RETURN jsonb_build_object(
+          'ok', FALSE,
+          'message', 'Kechirasiz, tanlangan mahsulot omborda yetarli emas.'
+        );
+      END IF;
+    END LOOP;
   END IF;
 
   FOR v_item IN
-    SELECT oi.product_id, oi.quantity, p.is_active, p.quantity AS stock
-    FROM order_items oi
-    JOIN products p ON p.id = oi.product_id
-    WHERE oi.order_id = p_order_id
-    FOR UPDATE OF p
+    SELECT product_id, quantity FROM order_items WHERE order_id = p_order_id
   LOOP
-    IF v_item.is_active IS NOT TRUE OR v_item.stock < v_item.quantity THEN
-      RETURN jsonb_build_object(
-        'ok', FALSE,
-        'message', 'Kechirasiz, tanlangan mahsulot omborda yetarli emas.'
-      );
-    END IF;
-  END LOOP;
+    IF NOT COALESCE(v_order.stock_reserved, FALSE) THEN
+      UPDATE products
+      SET quantity = quantity - v_item.quantity,
+          is_active = (quantity - v_item.quantity > 0)
+      WHERE id = v_item.product_id
+        AND is_active = TRUE
+        AND quantity >= v_item.quantity;
 
-  FOR v_item IN
-    SELECT product_id, quantity
-    FROM order_items
-    WHERE order_id = p_order_id
-  LOOP
-    UPDATE products
-    SET quantity = quantity - v_item.quantity
-    WHERE id = v_item.product_id
-      AND is_active = TRUE
-      AND quantity >= v_item.quantity;
-
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'stock changed during payment';
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'stock changed during payment';
+      END IF;
+    ELSE
+      UPDATE products
+      SET is_active = FALSE
+      WHERE id = v_item.product_id AND quantity <= 0;
     END IF;
 
-    INSERT INTO transactions (
-      product_id, type, quantity, admin_id, comment
-    )
+    INSERT INTO transactions (product_id, type, quantity, admin_id, comment)
     VALUES (
-      v_item.product_id,
-      'sotuv',
-      v_item.quantity,
-      NULL,
+      v_item.product_id, 'sotuv', v_item.quantity, NULL,
       format('%s to''lov · buyurtma #%s', v_provider, p_order_id)
     );
   END LOOP;
@@ -453,6 +473,8 @@ BEGIN
 END;
 $$;
 
+-- ── 6. Ruxsatlar va RLS ───────────────────────────────────
+
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON products, orders, order_items, transactions
   TO anon, authenticated;
@@ -471,9 +493,6 @@ GRANT EXECUTE ON FUNCTION shop_reject_order(INTEGER)
 GRANT EXECUTE ON FUNCTION shop_mark_order_paid(INTEGER, TEXT, TEXT)
   TO anon, authenticated;
 
--- Bot Telegram orqali o'z autentifikatsiyasini tekshiradi. Anon key bilan
--- ishlashi uchun PostgREST rollariga jadval siyosatlari kerak.
--- Productionda SUPABASE_SERVICE_ROLE_KEY ishlatish xavfsizroq.
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;

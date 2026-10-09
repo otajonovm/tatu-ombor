@@ -2,13 +2,14 @@
 
 ## 1. Database
 
-Supabase SQL Editor'da `supabase/schema.sql` faylini to'liq ishga tushiring.
-Skript mavjud jadvallarga TMA ustunlarini qo'shadi:
+- Yangi loyiha: `supabase/schema.sql`
+- Mavjud baza: `supabase/apply_updates.sql` (SQL Editor'da to'liq Run)
 
-- `products.category`, `sizes`, `colors`, `image_urls`
-- `orders.comment`
-- `order_items.size`, `color`
-- atomik order/stock RPC funksiyalari
+Skriptlar:
+
+- TMA ustunlari (`category`, `sizes`, `colors`, `image_urls`, ...)
+- tugagan mahsulotni avto-arxivlash
+- kirim arxivdagi mahsulotga ham ishlaydi
 
 Supabase Storage'da `product-images` nomli **public bucket** yarating.
 Admin TMA mahsulot qo'shishda URL yoki rasm faylini shu bucket'ga yuklaydi.
