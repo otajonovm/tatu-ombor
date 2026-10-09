@@ -592,6 +592,23 @@ def _order_is_reserved(order: dict | None) -> bool:
   return bool(order.get("stock_reserved"))
 
 
+def _items_already_consumed(items: list[dict]) -> bool:
+  """Bron qilingan buyurtma: qoldiq allaqachon kamaygan / mahsulot arxivlangan."""
+  if not items:
+    return False
+  for item in items:
+    product = get_product(int(item["product_id"]))
+    if not product:
+      return False
+    still_available = (
+      product.get("is_active", True)
+      and int(product["quantity"]) >= int(item["quantity"])
+    )
+    if still_available:
+      return False
+  return True
+
+
 def _mark_order_reserved(order_id: int) -> None:
   try:
     _db().table("orders").update({"stock_reserved": True}).eq(
@@ -937,7 +954,7 @@ def approve_order(order_id: int, admin_id: int) -> tuple[bool, str]:
   if not items:
     return False, "Buyurtmada mahsulot yo'q."
 
-  if not _order_is_reserved(order):
+  if not _order_is_reserved(order) and not _items_already_consumed(items):
     if not _reserve_stock_for_order(order_id, items):
       return False, "Mahsulot qoldig'i yetarli emas."
   _write_sale_transactions(
@@ -955,7 +972,7 @@ def reject_order(order_id: int) -> tuple[bool, str]:
   if order["status"] != "pending":
     return False, "Buyurtma allaqachon ko'rib chiqilgan."
   items = get_order_items(order_id)
-  if _order_is_reserved(order):
+  if _order_is_reserved(order) or _items_already_consumed(items):
     _release_stock(items)
   _set_order_status(order_id, "rejected")
   return True, "Buyurtma bekor qilindi."
@@ -1022,7 +1039,7 @@ def validate_order_for_payment(order_id: int) -> tuple[bool, str]:
   if not items:
     return False, "Buyurtmada mahsulot yo'q."
 
-  if _order_is_reserved(order):
+  if _order_is_reserved(order) or _items_already_consumed(items):
     return True, "OK"
 
   for item in items:
@@ -1041,7 +1058,7 @@ def validate_order_for_payment(order_id: int) -> tuple[bool, str]:
         qty,
         None if not product else product.get("quantity"),
       )
-      return False, PAYMENT_STOCK_ERROR
+      return False, f"«{name}» sotuvda emas."
   return True, "OK"
 
 
@@ -1050,20 +1067,25 @@ def _mark_order_paid_direct(
   payment_charge_id: str | None = None,
   provider: str = "",
 ) -> tuple[bool, str]:
-  """RPC yo'q bo'lsa — stock/transaction/status ni ketma-ket yangilaydi."""
-  ok, message = validate_order_for_payment(order_id)
-  if not ok:
-    # Idempotent: allaqachon paid
-    order = get_order(order_id)
-    if order and order["status"] == "paid":
-      return True, "Buyurtma allaqachon to'langan."
-    return False, message
+  """Telegram successful_payment dan keyin — pul allaqachon yechilgan."""
+  order = get_order(order_id)
+  if not order:
+    return False, "Buyurtma topilmadi."
+  if order["status"] == "paid":
+    return True, "Buyurtma allaqachon to'langan."
+  if order["status"] != "pending":
+    return False, "Bu buyurtma uchun to'lov qabul qilinmaydi."
 
   items = get_order_items(order_id)
-  order = get_order(order_id)
-  if not _order_is_reserved(order):
+  if not items:
+    return False, "Buyurtmada mahsulot yo'q."
+
+  if not _order_is_reserved(order) and not _items_already_consumed(items):
     if not _reserve_stock_for_order(order_id, items):
-      return False, PAYMENT_STOCK_ERROR
+      logger.warning(
+        "To'lov o'tdi, qoldiq bronlanmadi order=%s — status paid qilinadi",
+        order_id,
+      )
   _write_sale_transactions(
     order_id, items, None, payment_comment(order_id, provider)
   )
@@ -1119,27 +1141,8 @@ def mark_order_paid(
   payment_charge_id: str | None = None,
   provider: str = "",
 ) -> tuple[bool, str]:
-  base = {
-    "p_order_id": order_id,
-    "p_payment_charge_id": payment_charge_id,
-  }
-  attempts = [base]
-  if provider in {"click", "payme"}:
-    attempts.insert(0, {**base, "p_provider": provider})
-
-  for params in attempts:
-    try:
-      response = _db().rpc("shop_mark_order_paid", params).execute()
-      result = _one(response.data) or {}
-      if "ok" in result:
-        if result.get("ok"):
-          _align_payment_comment(order_id, provider)
-        return bool(result.get("ok")), result.get(
-          "message", "Noma'lum xatolik."
-        )
-    except Exception as error:
-      logger.warning("shop_mark_order_paid RPC ishlamadi: %s", error)
-
+  # Eski shop_mark_order_paid RPC arxivlangan (tugagan) mahsulotni rad etadi.
+  # Pul allaqachon yechilgan bo'lsa, Python orqali statusni yangilaymiz.
   return _mark_order_paid_direct(order_id, payment_charge_id, provider)
 
 
