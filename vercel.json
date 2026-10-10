@@ -6,15 +6,15 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://tatubrandshop-87f20a5612d9.herokuapp.com/api/:path*"
+      "destination": "https://web-production-0da87.up.railway.app/api/:path*"
     },
     {
       "source": "/media/:path*",
-      "destination": "https://tatubrandshop-87f20a5612d9.herokuapp.com/media/:path*"
+      "destination": "https://web-production-0da87.up.railway.app/media/:path*"
     },
     {
       "source": "/health",
-      "destination": "https://tatubrandshop-87f20a5612d9.herokuapp.com/health"
+      "destination": "https://web-production-0da87.up.railway.app/health"
     },
     {
       "source": "/((?!assets/).*)",
