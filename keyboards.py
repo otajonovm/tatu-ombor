@@ -13,6 +13,7 @@ from supabase_db import format_price, get_all_products, get_orders_by_status
 BTN_CATALOG = "🛍 Katalog"
 BTN_CART = "🛒 Savat"
 BTN_MY_ORDERS = "📦 Mening buyurtmalarim"
+BTN_PICKUP = "📍 Qayerdan olib ketaman?"
 BTN_ABOUT = "ℹ️ Biz haqimizda"
 
 BTN_ADD_PRODUCT = "➕ Mahsulot qo'shish"
@@ -29,6 +30,7 @@ def client_reply_keyboard(show_admin_back: bool = False) -> ReplyKeyboardMarkup:
   rows = [
     [KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART)],
     [KeyboardButton(text=BTN_MY_ORDERS), KeyboardButton(text=BTN_ABOUT)],
+    [KeyboardButton(text=BTN_PICKUP)],
   ]
   if WEBAPP_URL:
     rows.insert(
@@ -310,6 +312,43 @@ def admin_orders_keyboard() -> InlineKeyboardMarkup:
       ]
     )
   return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def order_slip_keyboard(order_id: int, *, ready: bool, pending: bool) -> InlineKeyboardMarkup:
+  rows: list[list[InlineKeyboardButton]] = []
+  if ready:
+    rows.append(
+      [
+        InlineKeyboardButton(
+          text="🏷 Olib ketish kodi (QR)",
+          callback_data=f"order:qr:{order_id}",
+        )
+      ]
+    )
+  if pending:
+    rows.extend(pay_order_keyboard(order_id).inline_keyboard)
+  rows.append(
+    [
+      InlineKeyboardButton(
+        text="📍 Qayerdan olib ketaman?",
+        callback_data="order:pickup",
+      )
+    ]
+  )
+  return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def deliver_order_keyboard(order_id: int) -> InlineKeyboardMarkup:
+  return InlineKeyboardMarkup(
+    inline_keyboard=[
+      [
+        InlineKeyboardButton(
+          text="✅ Mahsulotni topshirdim",
+          callback_data=f"order:deliver:{order_id}",
+        )
+      ]
+    ]
+  )
 
 
 def admin_order_actions_keyboard(order_id: int) -> InlineKeyboardMarkup:

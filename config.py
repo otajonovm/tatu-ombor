@@ -231,10 +231,30 @@ DEFAULT_PRODUCTS = [
   },
 ]
 
+# 480-xona: mahsulotni olib ketish nuqtasi.
+PICKUP_ADDRESS = "TATU bosh binosi, C-bino, 480-xona"
+PICKUP_HOURS = "Dushanba – Juma, 09:00 dan 17:00 gacha"
+PICKUP_CONTACT = "@tatu_shop_admin"
+PICKUP_PHONE = "+998 xx xxx xx xx"
+PICKUP_GUIDE = (
+  "📍 <b>Qayerdan olib ketaman?</b>\n\n"
+  "Manzil: <b>TATU bosh binosi, C-bino, 480-xona</b>.\n"
+  "480-xona — C-binoning <b>4-qavati</b>, eshik raqami <b>480</b>.\n\n"
+  "Chiqish tartibi:\n"
+  "1. Universitetning bosh kirishidan ichkariga kiring.\n"
+  "2. C-bino tomonga o'ting.\n"
+  "3. Zinapoya yoki lift bilan <b>4-qavat</b>ga chiqing.\n"
+  "4. Yo'lakda <b>480</b> raqamli eshikni toping.\n"
+  "5. Xodimga buyurtma kodi yoki QR ni ko'rsating.\n\n"
+  f"🕒 <b>Ish vaqti:</b> {PICKUP_HOURS}\n"
+  f"📞 <b>Aloqa:</b> {PICKUP_CONTACT} ({PICKUP_PHONE})"
+)
+
 ORDER_STATUS_LABELS = {
-  "pending": "⏳ Kutilmoqda",
-  "paid": "💳 To'langan",
-  "approved": "✅ Qabul qilindi",
+  "pending": "⏳ To'lov kutilmoqda",
+  "paid": "🔘 Tayyor (480-xonadan olib ketishingiz mumkin)",
+  "approved": "🔘 Tayyor (480-xonadan olib ketishingiz mumkin)",
+  "delivered": "🎓 Topshirildi",
   "rejected": "❌ Bekor qilindi",
 }
 

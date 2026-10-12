@@ -17,6 +17,32 @@ def product_deep_link(product_id: int, bot_username: str | None = None) -> str:
   return f"https://t.me/{username}?start=prod_{int(product_id)}"
 
 
+def claim_deep_link(order_id: int, bot_username: str | None = None) -> str:
+  """480-xona xodimi skaner qiladigan olib ketish havolasi."""
+  username = (bot_username or BOT_USERNAME).lstrip("@").strip()
+  if not username:
+    username = "tatubrandshopbot"
+  return f"https://t.me/{username}?start=claim_{int(order_id)}"
+
+
+def build_claim_qr_png(order_id: int, bot_username: str | None = None) -> io.BytesIO:
+  link = claim_deep_link(order_id, bot_username)
+  qr = qrcode.QRCode(
+    version=None,
+    error_correction=ERROR_CORRECT_M,
+    box_size=10,
+    border=2,
+  )
+  qr.add_data(link)
+  qr.make(fit=True)
+  image = qr.make_image(fill_color="black", back_color="white")
+  buffer = io.BytesIO()
+  image.save(buffer, format="PNG")
+  buffer.seek(0)
+  buffer.name = f"tatu_claim_{int(order_id)}.png"
+  return buffer
+
+
 def build_product_qr_png(product_id: int, bot_username: str | None = None) -> io.BytesIO:
   """Deep link uchun PNG QR kodni BytesIO da qaytaradi (seek=0)."""
   link = product_deep_link(product_id, bot_username)

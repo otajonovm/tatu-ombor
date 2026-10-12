@@ -15,7 +15,7 @@ from config import (
   SUPABASE_KEY,
   SUPABASE_URL,
 )
-from handlers import admin, client, common, payment
+from handlers import admin, client, common, orders, payment
 from supabase_db import init_db
 from utils.placeholders import ensure_product_images
 from utils.singleton import acquire_singleton, release_singleton
@@ -48,8 +48,9 @@ async def main() -> None:
     )
     dp = Dispatcher(storage=MemoryStorage())
 
-    # Tartib: to'lov (pre_checkout/success), admin, mijoz, common
+    # Tartib: to'lov, olib ketish, admin, mijoz, common
     dp.include_router(payment.router)
+    dp.include_router(orders.router)
     dp.include_router(admin.router)
     dp.include_router(client.router)
     dp.include_router(common.router)

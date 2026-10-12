@@ -2,7 +2,7 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from config import ADMIN_IDS, ORDER_STATUS_LABELS, SHOP_ABOUT
+from config import ADMIN_IDS, SHOP_ABOUT
 from supabase_db import (
   add_to_cart,
   cart_details,
@@ -11,7 +11,6 @@ from supabase_db import (
   format_price,
   get_active_products,
   get_product,
-  get_user_orders,
 )
 from filters.admin import is_admin
 from keyboards import (
@@ -19,7 +18,6 @@ from keyboards import (
   BTN_CANCEL,
   BTN_CART,
   BTN_CATALOG,
-  BTN_MY_ORDERS,
   cancel_inline_keyboard,
   cancel_reply_keyboard,
   cart_keyboard,
@@ -103,43 +101,6 @@ async def show_cart(message: Message, state: FSMContext) -> None:
     return
   await state.clear()
   await _send_cart(message, message.from_user.id)
-
-
-@router.message(F.text == BTN_MY_ORDERS)
-async def show_my_orders(message: Message, state: FSMContext) -> None:
-  if await _block_if_ordering(message, state):
-    return
-  await state.clear()
-  orders = get_user_orders(message.from_user.id)
-  if not orders:
-    await message.answer(
-      "📦 Sizda hali buyurtmalar yo'q.",
-      reply_markup=_client_kb(message.from_user.id),
-    )
-    return
-
-  lines = ["📦 <b>Mening buyurtmalarim</b>\n"]
-  pending_pay_ids: list[int] = []
-  for order in orders:
-    status = ORDER_STATUS_LABELS.get(order["status"], order["status"])
-    created = order["created_at"]
-    created_s = created.strftime("%Y-%m-%d %H:%M") if hasattr(created, "strftime") else str(created)
-    lines.append(
-      f"#{order['id']} — {format_price(order['total_price'])}\n"
-      f"   {status}\n"
-      f"   📅 {created_s}\n"
-    )
-    if order["status"] == "pending":
-      pending_pay_ids.append(int(order["id"]))
-  await message.answer(
-    "\n".join(lines),
-    reply_markup=_client_kb(message.from_user.id),
-  )
-  if pending_pay_ids:
-    await message.answer(
-      "💳 To'lanmagan buyurtmani to'lash:",
-      reply_markup=pay_order_keyboard(pending_pay_ids[0]),
-    )
 
 
 @router.message(F.text == BTN_ABOUT)

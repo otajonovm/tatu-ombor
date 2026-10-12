@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS orders (
   comment           TEXT NOT NULL DEFAULT '',
   total_price       INTEGER NOT NULL DEFAULT 0 CHECK (total_price >= 0),
   status            TEXT NOT NULL DEFAULT 'pending'
-                      CHECK (status IN ('pending', 'paid', 'approved', 'rejected')),
+                      CHECK (status IN ('pending', 'paid', 'approved', 'delivered', 'rejected')),
   payment_charge_id TEXT,
   stock_reserved    BOOLEAN NOT NULL DEFAULT FALSE,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()

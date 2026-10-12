@@ -1166,6 +1166,42 @@ def _align_payment_comment(order_id: int, provider: str) -> None:
       logger.debug("To'lov izohini yangilab bo'lmadi", exc_info=True)
 
 
+def mark_order_delivered(order_id: int) -> tuple[bool, str]:
+  """To'langan buyurtmani topshirilgan deb belgilaydi. Qoldiqqa tegmaydi."""
+  order = get_order(order_id)
+  if not order:
+    return False, "Buyurtma topilmadi."
+  if order["status"] == "delivered":
+    return True, "Buyurtma allaqachon topshirilgan."
+  if order["status"] not in {"paid", "approved"}:
+    return False, "Bu buyurtma hali to'lanmagan. Avval to'lovni tasdiqlang."
+  try:
+    response = (
+      _db()
+      .table("orders")
+      .update({"status": "delivered"})
+      .eq("id", order_id)
+      .eq("status", order["status"])
+      .execute()
+    )
+  except Exception as error:
+    logger.exception("delivered yozilmadi order=%s", order_id)
+    text = str(error)
+    if "orders_status_check" in text or "check constraint" in text.lower():
+      return (
+        False,
+        "Baza hali delivered holatini qabul qilmaydi. "
+        "Supabase SQL Editor da apply_updates.sql ni qayta yuboring.",
+      )
+    return False, text
+  if not response.data:
+    fresh = get_order(order_id)
+    if fresh and fresh["status"] == "delivered":
+      return True, "Buyurtma allaqachon topshirilgan."
+    return False, "Holat yangilanmadi."
+  return True, "Mahsulot topshirildi."
+
+
 def mark_order_paid(
   order_id: int,
   payment_charge_id: str | None = None,
@@ -1224,10 +1260,11 @@ def get_stats() -> dict:
     "paid_orders": sum(row["status"] == "paid" for row in orders),
     "approved_orders": sum(row["status"] == "approved" for row in orders),
     "rejected_orders": sum(row["status"] == "rejected" for row in orders),
+    "delivered_orders": sum(row["status"] == "delivered" for row in orders),
     "revenue": sum(
       row["total_price"]
       for row in orders
-      if row["status"] in {"approved", "paid"}
+      if row["status"] in {"approved", "paid", "delivered"}
     ),
     "sold_units": sum(
       row["quantity"] for row in transactions if row["type"] == "sotuv"

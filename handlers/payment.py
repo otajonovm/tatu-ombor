@@ -397,11 +397,15 @@ async def on_successful_payment(message: Message) -> None:
     f"💰 Summa: <b>{format_price(paid_som)}</b>\n"
     f"🧾 {label} ID: <code>{safe_charge}</code>\n\n"
     f"{item_lines}\n\n"
-    "Tez orada buyurtmangiz bilan bog'lanamiz.",
+    "Mahsulotni C-bino, 480-xonadan olib ketasiz. "
+    "Karta va QR pastda.",
     reply_markup=client_reply_keyboard(
       show_admin_back=is_admin(message.from_user.id)
     ),
   )
+  from handlers.orders import show_my_orders
+
+  await show_my_orders(message, message.from_user.id)
 
   if not fresh_payment:
     return

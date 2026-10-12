@@ -14,6 +14,7 @@ from keyboards import (
   product_buy_keyboard,
   role_reply_keyboard,
 )
+from handlers.orders import handle_claim_start, parse_claim_arg
 from supabase_db import get_product
 from utils.media import send_product_card
 
@@ -50,6 +51,11 @@ async def cmd_start(
 ) -> None:
   await state.clear()
   admin_user = is_admin(message.from_user.id)
+  claim_id = parse_claim_arg(command.args)
+  if claim_id is not None:
+    await handle_claim_start(message, claim_id)
+    return
+
   product_id = parse_product_deep_link(command.args)
 
   if product_id is not None:
@@ -102,9 +108,11 @@ async def cmd_help(message: Message) -> None:
       "⚙️ <b>Admin yordam</b>\n\n"
       "• Mahsulot qo'shish / kirim / boshqarish\n"
       "• Yangi buyurtmalarni tasdiqlash yoki rad etish\n"
+      "• 480-xonada kod (#TATU-42 yoki 42) yoki mijoz QR ini tekshirish\n"
       "• Statistika va tarix\n"
       "• Mahsulot kartasidan «🔲 QR Kod yaratish»\n"
-      "• «Mijoz menyusi» orqali katalogni ko'rish"
+      "• «Mijoz menyusi» orqali katalogni ko'rish\n"
+      "• Buyurtma kodi: #TATU-42 yoki 42"
     )
   else:
     text = (
@@ -112,7 +120,8 @@ async def cmd_help(message: Message) -> None:
       "• Katalogdan mahsulot tanlang\n"
       "• QR kodni skaner qilib to'g'ridan-to'g'ri mahsulotni oching\n"
       "• Savatga qo'shing yoki tezkor buyurtma bering\n"
-      "• «Mening buyurtmalarim» orqali holatni kuzating"
+      "• «Mening buyurtmalarim»da olib ketish kartasi va QR\n"
+      "• «Qayerdan olib ketaman?» — C-bino, 480-xona"
     )
   await message.answer(text, reply_markup=role_reply_keyboard(admin_user))
 

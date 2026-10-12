@@ -682,6 +682,7 @@ async def show_stats(message: Message, state: FSMContext) -> None:
     f"⏳ Kutilayotgan: <b>{stats['pending_orders']}</b>",
     f"💳 To'langan: <b>{stats.get('paid_orders', 0)}</b>",
     f"✅ Qabul qilingan: <b>{stats['approved_orders']}</b>",
+    f"🎓 Topshirilgan: <b>{stats.get('delivered_orders', 0)}</b>",
     f"❌ Rad etilgan: <b>{stats['rejected_orders']}</b>",
     f"🛒 Sotilgan dona: <b>{stats['sold_units']}</b>",
     f"💵 Tushum: <b>{format_price(stats['revenue'])}</b>",
