@@ -1001,16 +1001,23 @@ def payment_comment(order_id: int, provider: str) -> str:
 
 
 def parse_payment_payload(payload: str) -> tuple[int | None, str]:
-  """`order_{id}` yoki `order_{id}:click|payme` dan id va provayderni ajratadi."""
+  """`order_{id}`, `order_{id}_payme` yoki eski `order_{id}:payme` ni ajratadi."""
   if not payload or not payload.startswith("order_"):
     return None, ""
   body = payload.removeprefix("order_").strip()
   provider = ""
   if ":" in body:
     raw, provider = body.split(":", 1)
-    provider = provider.strip().lower()
   else:
     raw = body
+    for name in ("payme", "click"):
+      suffix = f"_{name}"
+      if raw.endswith(suffix):
+        raw = raw[: -len(suffix)]
+        provider = name
+        break
+  raw = raw.strip()
+  provider = provider.strip().lower()
   if not raw.isdigit():
     return None, ""
   if provider not in {"click", "payme"}:

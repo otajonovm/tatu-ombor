@@ -36,7 +36,7 @@ from supabase_db import (
 logger = logging.getLogger(__name__)
 router = Router(name="payment")
 
-# Telegram UZS. Click hujjatidagi pastki chegara 10 000 so'm, Payme — 1 000 so'm.
+# Telegram UZS. Click hujjatidagi pastki chegara 10 000 so'm, Payme — 5 000 so'm.
 PROVIDERS: dict[str, dict[str, object]] = {
   "click": {
     "label": "Click",
@@ -46,7 +46,7 @@ PROVIDERS: dict[str, dict[str, object]] = {
   "payme": {
     "label": "Payme",
     "token": PAYME_PROVIDER_TOKEN,
-    "min_som": 1_000,
+    "min_som": 5_000,
   },
 }
 INVOICE_TITLE_LIMIT = 32
@@ -81,57 +81,45 @@ def _hide_tokens(text: str) -> str:
   return text
 
 
+def _plain_invoice_text(text: str) -> str:
+  """Payme #, ×, • kabi belgilarni Invalid Params deb qaytarishi mumkin."""
+  cleaned = "".join(ch for ch in text if ch.isalnum() or ch in " -")
+  return " ".join(cleaned.split())
+
+
 def _invoice_title(order_id: int) -> str:
-  title = f"TATU Brand Shop Buyurtma #{order_id}"
-  if len(title) <= INVOICE_TITLE_LIMIT:
-    return title
-  return f"Buyurtma #{order_id}"[:INVOICE_TITLE_LIMIT]
+  title = f"Buyurtma {order_id}"
+  return title[:INVOICE_TITLE_LIMIT]
 
 
 def _invoice_description(order_id: int, items: list[dict]) -> str:
-  lines: list[str] = []
+  parts: list[str] = []
   for item in items[:8]:
-    name = (item.get("product_name") or "Mahsulot").strip()
-    lines.append(f"• {name} × {item['quantity']}")
+    name = _plain_invoice_text(str(item.get("product_name") or "Mahsulot")) or "Mahsulot"
+    parts.append(f"{name} x {int(item['quantity'])}")
   if len(items) > 8:
-    lines.append(f"• … va yana {len(items) - 8} ta")
-  description = "\n".join(lines) if lines else f"Buyurtma #{order_id}"
+    parts.append(f"va yana {len(items) - 8} ta")
+  description = ", ".join(parts) if parts else f"Buyurtma {order_id}"
   if len(description) > INVOICE_DESCRIPTION_LIMIT:
     return description[: INVOICE_DESCRIPTION_LIMIT - 3] + "..."
   return description
 
 
-def _invoice_prices(order_id: int, items: list[dict], total_som: int) -> list[LabeledPrice]:
-  """Har bir qatorni tiyinga o'tkazadi. Yig'indi buyurtma summasiga teng bo'lmasa — bitta qator."""
-  prices: list[LabeledPrice] = []
-  summed = 0
-  for item in items:
-    qty = int(item["quantity"])
-    unit = int(item.get("unit_price") or 0)
-    if qty <= 0 or unit < 0:
-      return [
-        LabeledPrice(
-          label=f"Buyurtma #{order_id}"[:PRICE_LABEL_LIMIT],
-          amount=som_to_tiyin(total_som),
-        )
-      ]
-    label = f"{(item.get('product_name') or 'Mahsulot').strip()} × {qty}"
-    prices.append(
-      LabeledPrice(
-        label=label[:PRICE_LABEL_LIMIT],
-        amount=som_to_tiyin(unit * qty),
-      )
-    )
-    summed += unit * qty
+def _price_label(items: list[dict]) -> str:
+  """Payme ba'zi belgilarni Invalid Params deb qaytaradi, shuning uchun bitta oddiy nom."""
+  raw = "Mahsulot"
+  if len(items) == 1:
+    raw = str(items[0].get("product_name") or "Mahsulot")
+  cleaned = "".join(ch for ch in raw if ch.isalnum() or ch in " -")
+  cleaned = " ".join(cleaned.split())
+  return (cleaned or "Mahsulot")[:PRICE_LABEL_LIMIT]
 
-  if not prices or summed != total_som:
-    return [
-      LabeledPrice(
-        label=f"Buyurtma #{order_id}"[:PRICE_LABEL_LIMIT],
-        amount=som_to_tiyin(total_som),
-      )
-    ]
-  return prices
+
+def _invoice_prices(order_id: int, items: list[dict], total_som: int) -> list[LabeledPrice]:
+  """Bitta qator, summa qat'iy int tiyin: int(so'm * 100)."""
+  del order_id
+  amount = int(int(total_som) * 100)
+  return [LabeledPrice(label=_price_label(items), amount=amount)]
 
 
 def _evaluate_pre_checkout(
@@ -202,20 +190,26 @@ async def send_order_invoice(
   if intro_text:
     await bot.send_message(chat_id, intro_text)
 
+  # Payme payload ichidagi ":" va telefonga yuborishni Invalid Params deb qaytaradi.
+  # start_parameter faqat lotin, raqam va pastki chiziq.
+  invoice_kwargs: dict[str, object] = {
+    "chat_id": chat_id,
+    "title": _invoice_title(order_id),
+    "description": _invoice_description(order_id, items),
+    "payload": f"order_{order_id}_{provider}",
+    "provider_token": token,
+    "currency": "UZS",
+    "prices": _invoice_prices(order_id, items, total_som),
+    "start_parameter": f"pay_order_{order_id}",
+    "is_flexible": False,
+  }
+  if provider == "click":
+    invoice_kwargs["need_name"] = True
+    invoice_kwargs["need_phone_number"] = True
+    invoice_kwargs["send_phone_number_to_provider"] = True
+
   try:
-    await bot.send_invoice(
-      chat_id=chat_id,
-      title=_invoice_title(order_id),
-      description=_invoice_description(order_id, items),
-      payload=f"order_{order_id}:{provider}",
-      provider_token=token,
-      currency=PAYMENT_CURRENCY,
-      prices=_invoice_prices(order_id, items, total_som),
-      start_parameter=f"order-{order_id}-{provider}",
-      need_name=True,
-      need_phone_number=True,
-      send_phone_number_to_provider=True,
-    )
+    await bot.send_invoice(**invoice_kwargs)
   except Exception as error:
     logger.exception("send_invoice xato order=%s provider=%s", order_id, provider)
     detail = escape(_hide_tokens(str(error)))[:300]
@@ -279,6 +273,13 @@ async def cb_pay_order(callback: CallbackQuery) -> None:
 @router.pre_checkout_query()
 async def on_pre_checkout(query: PreCheckoutQuery) -> None:
   """Pul yechilishidan oldin ombor tekshiruvi. Javob 10 soniya ichida."""
+  logger.info(
+    "pre_checkout user_id=%s currency=%s total=%s payload=%s",
+    query.from_user.id,
+    query.currency,
+    query.total_amount,
+    query.invoice_payload,
+  )
   try:
     ok, message = await asyncio.to_thread(
       _evaluate_pre_checkout,

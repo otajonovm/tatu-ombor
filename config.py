@@ -6,9 +6,12 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "tatubrandshopbot").strip().lstrip("@")
-# Ikkala provayder alohida token. Eski PAYMENTS_PROVIDER_TOKEN faqat Click
-# kaliti berilmagan bo'lsa Click sifatida olinadi.
-PAYME_PROVIDER_TOKEN = os.getenv("PAYME_PROVIDER_TOKEN", "").strip()
+# Payme kaliti: PAYMENT_PROVIDER_TOKEN (LIVE sinov) bo'lsa u ishlatiladi.
+# Bo'lmasa eski PAYME_PROVIDER_TOKEN. Click alohida qoladi.
+PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN", "").strip()
+PAYME_PROVIDER_TOKEN = (
+  PAYMENT_PROVIDER_TOKEN or os.getenv("PAYME_PROVIDER_TOKEN", "").strip()
+)
 CLICK_PROVIDER_TOKEN = os.getenv("CLICK_PROVIDER_TOKEN", "").strip()
 _legacy_payment_token = os.getenv("PAYMENTS_PROVIDER_TOKEN", "").strip()
 if (
