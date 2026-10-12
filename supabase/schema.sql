@@ -220,27 +220,7 @@ BEGIN
     );
   END LOOP;
 
-  FOR v_item IN
-    SELECT * FROM jsonb_to_recordset(p_items)
-      AS x(product_id INTEGER, quantity INTEGER)
-  LOOP
-    UPDATE products
-    SET quantity = quantity - v_item.quantity,
-        is_active = (quantity - v_item.quantity > 0)
-    WHERE id = v_item.product_id
-      AND is_active = TRUE
-      AND quantity >= v_item.quantity;
-
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'stock changed during order create';
-    END IF;
-  END LOOP;
-
-  UPDATE orders
-  SET stock_reserved = TRUE
-  WHERE id = v_order.id
-  RETURNING * INTO v_order;
-
+  -- Qoldiq bu yerda kamaymaydi. Ayirish to'lov yoki admin tasdig'ida.
   RETURN to_jsonb(v_order);
 END;
 $$;

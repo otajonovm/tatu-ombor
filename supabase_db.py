@@ -131,6 +131,7 @@ def init_db(default_products: list[dict]) -> None:
         )
 
   archive_sold_out_products()
+  release_unpaid_reservations()
 
 
 def format_price(amount: int) -> str:
@@ -770,14 +771,36 @@ def _create_order_direct(
         }
       ).execute()
 
-  if not _reserve_stock_for_order(order["id"], prepared):
-    try:
-      _db().table("orders").delete().eq("id", order["id"]).execute()
-    except Exception:
-      _set_order_status(order["id"], "rejected")
-    return None
-
+  # Qoldiq to'lov yoki admin tasdig'igacha kamaymaydi.
   return _normalise_order(get_order(order["id"]) or order)
+
+
+def release_unpaid_reservations() -> int:
+  """To'lanmagan buyurtma ushlab turgan qoldiqni omborga qaytaradi."""
+  restored = 0
+  for order in get_orders_by_status("pending", limit=200):
+    if not _order_is_reserved(order):
+      continue
+    order_id = int(order["id"])
+    try:
+      response = (
+        _db()
+        .table("orders")
+        .update({"stock_reserved": False})
+        .eq("id", order_id)
+        .eq("status", "pending")
+        .eq("stock_reserved", True)
+        .execute()
+      )
+    except Exception as error:
+      logger.warning("Bronni yechib bo'lmadi order=%s: %s", order_id, error)
+      continue
+    if not response.data:
+      continue
+    _release_stock(get_order_items(order_id))
+    restored += 1
+    logger.info("To'lanmagan buyurtma #%s qoldig'i qaytarildi.", order_id)
+  return restored
 
 
 def create_order(
