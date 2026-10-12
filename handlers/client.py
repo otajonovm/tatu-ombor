@@ -29,6 +29,7 @@ from keyboards import (
   product_buy_keyboard,
 )
 from locales import button_values, t
+from locales.products import localized_name
 from states import OrderStates
 from utils.media import replace_with_text, send_product_card
 
@@ -149,6 +150,7 @@ async def cb_product(callback: CallbackQuery, state: FSMContext, lang: str) -> N
     callback.message,
     product,
     product_buy_keyboard(product_id, lang),
+    lang=lang,
   )
 
 
@@ -166,7 +168,7 @@ async def cb_add_cart_one(callback: CallbackQuery, state: FSMContext, lang: str)
     t(
       lang,
       "added_hint",
-      name=escape(str(product["name"])),
+      name=escape(localized_name(product, lang)),
       cart=t(lang, "btn_cart"),
     ),
     reply_markup=_client_kb(callback.from_user.id, lang),
@@ -187,7 +189,7 @@ async def cb_buy_one(callback: CallbackQuery, state: FSMContext, lang: str) -> N
     t(
       lang,
       "order_line",
-      name=escape(str(product["name"])),
+      name=escape(localized_name(product, lang)),
       qty=1,
       price=format_price(product["price"]),
     ),
@@ -211,7 +213,7 @@ async def cb_add_cart(callback: CallbackQuery, state: FSMContext, lang: str) -> 
     t(
       lang,
       "stock_left",
-      name=escape(str(product["name"])),
+      name=escape(localized_name(product, lang)),
       qty=product["quantity"],
     ),
     cancel_inline_keyboard(lang),
@@ -234,7 +236,7 @@ async def cb_buy_now(callback: CallbackQuery, state: FSMContext, lang: str) -> N
     t(
       lang,
       "buy_qty_prompt",
-      name=escape(str(product["name"])),
+      name=escape(localized_name(product, lang)),
       qty=product["quantity"],
     ),
     cancel_inline_keyboard(lang),
@@ -276,7 +278,7 @@ async def process_quantity(message: Message, state: FSMContext, lang: str) -> No
     add_to_cart(message.from_user.id, product_id, quantity)
     await state.clear()
     await message.answer(
-      t(lang, "added_named", name=escape(str(product["name"])), qty=quantity),
+      t(lang, "added_named", name=escape(localized_name(product, lang)), qty=quantity),
       reply_markup=_client_kb(message.from_user.id, lang),
     )
     await _send_cart(message, message.from_user.id, lang)
@@ -541,7 +543,7 @@ async def _send_cart(message: Message, user_id: int, lang: str) -> None:
   for row in items:
     product = row["product"]
     lines.append(
-      f"• {escape(str(product['name']))} × {row['quantity']} = "
+      f"• {escape(localized_name(product, lang))} × {row['quantity']} = "
       f"{format_price(row['line_total'])}"
     )
   lines.append(t(lang, "cart_total", total=format_price(total)))

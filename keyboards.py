@@ -8,6 +8,7 @@ from aiogram.types import (
 
 from config import CLICK_PROVIDER_TOKEN, PAYME_PROVIDER_TOKEN, WEBAPP_URL
 from locales import t
+from locales.products import localized_name
 from supabase_db import format_price, get_all_products, get_orders_by_status
 
 # Reply tugmalar
@@ -108,7 +109,7 @@ def cancel_reply_keyboard(lang: str = "uz") -> ReplyKeyboardMarkup:
 def catalog_keyboard(products: list[dict], lang: str = "uz") -> InlineKeyboardMarkup:
   buttons: list[list[InlineKeyboardButton]] = []
   for product in products:
-    label = f"{product['name']} — {format_price(product['price'])}"
+    label = f"{localized_name(product, lang)} — {format_price(product['price'])}"
     buttons.append(
       [
         InlineKeyboardButton(

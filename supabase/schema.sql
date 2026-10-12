@@ -5,8 +5,12 @@
 
 CREATE TABLE IF NOT EXISTS products (
   id          SERIAL PRIMARY KEY,
-  name        TEXT NOT NULL UNIQUE,
-  description TEXT NOT NULL DEFAULT '',
+  name            TEXT NOT NULL UNIQUE,
+  description     TEXT NOT NULL DEFAULT '',
+  name_ru         TEXT NOT NULL DEFAULT '',
+  name_en         TEXT NOT NULL DEFAULT '',
+  description_ru  TEXT NOT NULL DEFAULT '',
+  description_en  TEXT NOT NULL DEFAULT '',
   price       INTEGER NOT NULL DEFAULT 0 CHECK (price >= 0),
   quantity    INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
   image_url   TEXT,

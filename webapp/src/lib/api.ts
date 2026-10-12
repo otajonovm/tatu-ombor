@@ -38,10 +38,11 @@ export function getMe() {
   return request<TelegramUser>('/api/me')
 }
 
-export function getProducts(params: { category?: string; search?: string } = {}) {
+export function getProducts(params: { category?: string; search?: string; lang?: string } = {}) {
   const query = new URLSearchParams()
   if (params.category) query.set('category', params.category)
   if (params.search) query.set('search', params.search)
+  if (params.lang) query.set('lang', params.lang)
   const suffix = query.toString() ? `?${query}` : ''
   return request<Product[]>(`/api/products${suffix}`)
 }

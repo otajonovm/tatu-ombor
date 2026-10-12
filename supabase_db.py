@@ -12,7 +12,8 @@ from config import SUPABASE_KEY, SUPABASE_URL
 IMAGES_DIR = Path(__file__).parent / "images"
 CARTS_FILE = Path(__file__).parent / "data" / "carts.json"
 PRODUCT_FIELDS = (
-  "id,name,description,price,quantity,image_url,image_urls,category,"
+  "id,name,description,name_ru,name_en,description_ru,description_en,"
+  "price,quantity,image_url,image_urls,category,"
   "sizes,colors,is_active,created_at"
 )
 LEGACY_PRODUCT_FIELDS = (
@@ -59,6 +60,8 @@ def _normalise_product(product: dict) -> dict:
   product.setdefault("category", "suvenir")
   product.setdefault("sizes", [])
   product.setdefault("colors", [])
+  for column in ("name_ru", "name_en", "description_ru", "description_en"):
+    product.setdefault(column, "")
   return product
 
 
@@ -135,6 +138,7 @@ def init_db(default_products: list[dict]) -> None:
 
   archive_sold_out_products()
   release_unpaid_reservations()
+  backfill_product_translations()
 
 
 def format_price(amount: int) -> str:
@@ -944,7 +948,8 @@ def get_order_items(order_id: int) -> list[dict]:
       _db()
       .table("order_items")
       .select(
-        "id,order_id,product_id,quantity,unit_price,size,color,products(name)"
+        "id,order_id,product_id,quantity,unit_price,size,color,"
+        "products(name,name_ru,name_en,description,description_ru,description_en)"
       )
       .eq("order_id", order_id)
       .order("id")
@@ -964,10 +969,56 @@ def get_order_items(order_id: int) -> list[dict]:
     related = row.pop("products", None) or {}
     if isinstance(related, list):
       related = related[0] if related else {}
-    row["product_name"] = related.get("name", "Noma'lum")
+    row["name"] = related.get("name") or ""
+    row["name_ru"] = related.get("name_ru") or ""
+    row["name_en"] = related.get("name_en") or ""
+    row["description"] = related.get("description") or ""
+    row["description_ru"] = related.get("description_ru") or ""
+    row["description_en"] = related.get("description_en") or ""
+    row["product_name"] = row["name"] or "Noma'lum"
     row.setdefault("size", None)
     row.setdefault("color", None)
   return rows
+
+
+def backfill_product_translations() -> None:
+  """Bo'sh rus/ingliz maydonlarini standart tarjima bilan to'ldiradi."""
+  from locales.product_translations import PRODUCT_TRANSLATIONS
+
+  try:
+    rows = (
+      _db()
+      .table("products")
+      .select("id,name,name_ru,name_en,description_ru,description_en")
+      .execute()
+      .data
+      or []
+    )
+  except Exception:
+    logger.warning(
+      "Mahsulot tarjimasi ustunlari yo'q. apply_updates.sql ni ishga tushiring."
+    )
+    return
+
+  updated = 0
+  for row in rows:
+    pack = PRODUCT_TRANSLATIONS.get(row.get("name") or "")
+    if not pack:
+      continue
+    payload = {
+      key: pack[key]
+      for key in ("name_ru", "name_en", "description_ru", "description_en")
+      if not str(row.get(key) or "").strip()
+    }
+    if not payload:
+      continue
+    try:
+      _db().table("products").update(payload).eq("id", row["id"]).execute()
+      updated += 1
+    except Exception:
+      logger.warning("Tarjima yozilmadi product=%s", row.get("id"))
+  if updated:
+    logger.info("Mahsulot tarjimalari to'ldirildi: %s", updated)
 
 
 def approve_order(order_id: int, admin_id: int) -> tuple[bool, str]:

@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from config import ADMIN_IDS, BOT_TOKEN, TMA_DEV_MODE, WEBAPI_URL, WEBAPP_ORIGINS
+from locales.products import localized_description, localized_name
 from supabase_db import (
   add_product,
   approve_order,
@@ -32,6 +33,7 @@ from supabase_db import (
   get_order,
   get_order_items,
   get_orders_by_status,
+  get_user_language,
   get_user_orders,
   reject_order,
   stock_in,
@@ -316,14 +318,38 @@ async def health() -> dict[str, str]:
   return {"status": "ok"}
 
 
+def _with_language(product: dict, lang: str) -> dict:
+  shown = dict(product)
+  shown["name"] = localized_name(product, lang)
+  shown["description"] = localized_description(product, lang)
+  return shown
+
+
+def _matches_search(product: dict, needle: str) -> bool:
+  blob = " ".join(
+    str(product.get(key) or "")
+    for key in (
+      "name",
+      "name_ru",
+      "name_en",
+      "description",
+      "description_ru",
+      "description_en",
+    )
+  )
+  return needle in blob.casefold()
+
+
 @app.get("/api/me")
 async def me(user: TelegramUser = Depends(telegram_user)) -> dict[str, Any]:
+  language_code = await run_db(get_user_language, user.id)
   return {
     "id": user.id,
     "first_name": user.first_name,
     "last_name": user.last_name,
     "username": user.username,
     "is_admin": user.id in ADMIN_IDS,
+    "language_code": language_code,
   }
 
 
@@ -331,6 +357,7 @@ async def me(user: TelegramUser = Depends(telegram_user)) -> dict[str, Any]:
 async def products(
   category: str | None = None,
   search: str | None = None,
+  lang: str | None = None,
 ) -> list[dict]:
   """Katalog ochiq — auth shart emas (buyurtma/admin alohida himoyalangan)."""
   rows = await run_db(get_active_products)
@@ -338,12 +365,9 @@ async def products(
     rows = [row for row in rows if row.get("category") == category]
   if search:
     needle = search.casefold().strip()
-    rows = [
-      row for row in rows
-      if needle in row["name"].casefold()
-      or needle in (row.get("description") or "").casefold()
-    ]
-  return [public_product_image_urls(row) for row in rows]
+    rows = [row for row in rows if _matches_search(row, needle)]
+  code = lang if lang in {"uz", "ru", "en"} else "uz"
+  return [public_product_image_urls(_with_language(row, code)) for row in rows]
 
 
 @app.get("/api/orders")

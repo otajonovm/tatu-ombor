@@ -73,6 +73,7 @@ async def resume_start(
       product,
       product_buy_keyboard(product_id, lang),
       for_client=True,
+      lang=lang,
     )
     return
 

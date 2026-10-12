@@ -3,6 +3,8 @@ from pathlib import Path
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import FSInputFile, Message, URLInputFile
 
+from locales import t
+from locales.products import localized_description, localized_name
 from supabase_db import format_price
 
 IMAGES_DIR = Path(__file__).parent.parent / "images"
@@ -21,18 +23,18 @@ def get_product_photo(product: dict) -> FSInputFile | URLInputFile | str | None:
   return FSInputFile(path) if path.is_file() else None
 
 
-def product_caption(product: dict, *, for_client: bool = True) -> str:
+def product_caption(product: dict, *, for_client: bool = True, lang: str = "uz") -> str:
   lines = [
-    f"🛍 <b>{product['name']}</b>",
+    f"🛍 <b>{localized_name(product, lang)}</b>",
     "",
   ]
-  description = (product.get("description") or "").strip()
+  description = localized_description(product, lang)
   if description:
     lines.extend([description, ""])
   lines.extend(
     [
-      f"💰 Narx: <b>{format_price(product['price'])}</b>",
-      f"📦 Qoldiq: <b>{product['quantity']}</b> dona",
+      t(lang, "caption_price", price=format_price(product["price"])),
+      t(lang, "caption_stock", qty=product["quantity"]),
     ]
   )
   if not for_client:
@@ -64,9 +66,10 @@ async def send_product_card(
   reply_markup=None,
   *,
   for_client: bool = True,
+  lang: str = "uz",
 ) -> Message:
   photo = get_product_photo(product)
-  caption = product_caption(product, for_client=for_client)
+  caption = product_caption(product, for_client=for_client, lang=lang)
 
   if photo:
     try:

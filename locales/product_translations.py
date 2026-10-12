@@ -1,0 +1,148 @@
+"""Standart mahsulotlarning rus va ingliz nomi. Kalit — o'zbekcha `products.name`."""
+
+PRODUCT_TRANSLATIONS: dict[str, dict[str, str]] = {
+  "Logotipli kepka": {
+    "name_ru": "Кепка с логотипом",
+    "name_en": "Cap with logo",
+    "description_ru": "Официальная кепка бренда ТУИТ",
+    "description_en": "Official TUIT brand cap",
+  },
+  "Logotipli futbolka": {
+    "name_ru": "Футболка с логотипом",
+    "name_en": "T-shirt with logo",
+    "description_ru": "Хлопковая футболка с логотипом ТУИТ",
+    "description_en": "Cotton T-shirt with the TUIT logo",
+  },
+  "Logotipli futbolka TERRO PRO": {
+    "name_ru": "Футболка TERRO PRO с логотипом",
+    "name_en": "TERRO PRO T-shirt with logo",
+    "description_ru": "Качественная брендовая футболка TERRO PRO",
+    "description_en": "Quality TERRO PRO brand T-shirt",
+  },
+  "Logotipli niqob": {
+    "name_ru": "Маска с логотипом",
+    "name_en": "Face mask with logo",
+    "description_ru": "Тканевая маска бренда ТУИТ",
+    "description_en": "TUIT brand fabric mask",
+  },
+  "Logotipli ryukzak": {
+    "name_ru": "Рюкзак с логотипом",
+    "name_en": "Backpack with logo",
+    "description_ru": "Качественный студенческий рюкзак",
+    "description_en": "Quality student backpack",
+  },
+  "Logotipli krujka": {
+    "name_ru": "Кружка с логотипом",
+    "name_en": "Mug with logo",
+    "description_ru": "Керамическая кружка с логотипом ТУИТ",
+    "description_en": "Ceramic mug with the TUIT logo",
+  },
+  "Logotipli termos": {
+    "name_ru": "Термос с логотипом",
+    "name_en": "Thermos with logo",
+    "description_ru": "Металлический термос, сохраняющий температуру",
+    "description_en": "Insulated metal thermos",
+  },
+  "Logotipli soyabon (katta)": {
+    "name_ru": "Зонт с логотипом (большой)",
+    "name_en": "Large umbrella with logo",
+    "description_ru": "Прочный зонт с логотипом ТУИТ",
+    "description_en": "Sturdy umbrella with the TUIT logo",
+  },
+  "Logotipli soyabon (ixcham)": {
+    "name_ru": "Зонт с логотипом (компактный)",
+    "name_en": "Compact umbrella with logo",
+    "description_ru": "Компактный зонт с логотипом ТУИТ",
+    "description_en": "Compact umbrella with the TUIT logo",
+  },
+  "Logotipli quvvatlagich": {
+    "name_ru": "Пауэрбанк с логотипом",
+    "name_en": "Power bank with logo",
+    "description_ru": "Портативное зарядное устройство",
+    "description_en": "Portable power bank",
+  },
+  "Logotipli fleshka": {
+    "name_ru": "Флешка с логотипом",
+    "name_en": "USB flash drive with logo",
+    "description_ru": "Брендовая USB-флешка",
+    "description_en": "Branded USB flash drive",
+  },
+  "Logotipli ruchka": {
+    "name_ru": "Ручка с логотипом",
+    "name_en": "Pen with logo",
+    "description_ru": "Официальная ручка ТУИТ",
+    "description_en": "Official TUIT pen",
+  },
+  "Logotipli g\u2018ilof": {
+    "name_ru": "Чехол с логотипом",
+    "name_en": "Case with logo",
+    "description_ru": "Специальный брендовый чехол",
+    "description_en": "Special brand case",
+  },
+  "Logotipli vizitka g\u2018ilofi": {
+    "name_ru": "Визитница с логотипом",
+    "name_en": "Card holder with logo",
+    "description_ru": "Качественная кожаная визитница",
+    "description_en": "Quality leather card holder",
+  },
+  "Logotipli gilamcha": {
+    "name_ru": "Коврик для мыши с логотипом",
+    "name_en": "Mouse pad with logo",
+    "description_ru": "Брендовый коврик для мыши",
+    "description_en": "Branded mouse pad",
+  },
+  "Logotipli bloknot": {
+    "name_ru": "Блокнот с логотипом",
+    "name_en": "Notebook with logo",
+    "description_ru": "Блокнот ТУИТ",
+    "description_en": "TUIT notebook",
+  },
+  "Logotipli kundalik": {
+    "name_ru": "Ежедневник с логотипом",
+    "name_en": "Diary with logo",
+    "description_ru": "Официальный ежедневник в твёрдой обложке",
+    "description_en": "Official hardcover diary",
+  },
+  "Logotipli brelok (metall)": {
+    "name_ru": "Брелок с логотипом (металл)",
+    "name_en": "Metal keychain with logo",
+    "description_ru": "Металлический брелок",
+    "description_en": "Metal keychain",
+  },
+  "Logotipli brelok (standart)": {
+    "name_ru": "Брелок с логотипом (стандарт)",
+    "name_en": "Standard keychain with logo",
+    "description_ru": "Стандартный брелок для ключей",
+    "description_en": "Standard keychain",
+  },
+  "Logotipli soat": {
+    "name_ru": "Часы с логотипом",
+    "name_en": "Clock with logo",
+    "description_ru": "Настенные или настольные часы",
+    "description_en": "Wall or desk clock",
+  },
+  "Logotipli sovg\u2018a to\u2018plami": {
+    "name_ru": "Подарочный набор с логотипом",
+    "name_en": "Gift set with logo",
+    "description_ru": "Основной брендовый подарочный набор",
+    "description_en": "Main brand gift set",
+  },
+  "Logotipli sovg\u2018a to\u2018plami \u2014 standart": {
+    "name_ru": "Подарочный набор с логотипом — стандарт",
+    "name_en": "Standard gift set with logo",
+    "description_ru": "Стандартный подарочный набор",
+    "description_en": "Standard bundled gift set",
+  },
+  "Logotipli sovg\u2018a to\u2018plami \u2014 kengaytirilgan": {
+    "name_ru": "Подарочный набор с логотипом — расширенный",
+    "name_en": "Extended gift set with logo",
+    "description_ru": "Расширенный мерч-набор",
+    "description_en": "Extended merch set",
+  },
+  "Logotipli sovg\u2018a to\u2018plami \u2014 premium": {
+    "name_ru": "Подарочный набор с логотипом — премиум",
+    "name_en": "Premium gift set with logo",
+    "description_ru": "Эксклюзивный премиум-набор",
+    "description_en": "Exclusive premium gift set",
+  },
+}

@@ -134,7 +134,9 @@ async function loadCatalog() {
   loading.value = true
   error.value = ''
   try {
-    products.value = await getProducts()
+    products.value = await getProducts({
+      lang: user.value?.language_code || 'uz',
+    })
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : 'Katalog yuklanmadi.'
   } finally {

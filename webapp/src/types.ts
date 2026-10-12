@@ -28,6 +28,7 @@ export interface TelegramUser {
   last_name: string
   username: string | null
   is_admin: boolean
+  language_code?: string
 }
 
 export interface Order {

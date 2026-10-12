@@ -139,3 +139,201 @@ GRANT EXECUTE ON FUNCTION shop_stock_in(INTEGER, INTEGER, BIGINT, TEXT)
   TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION shop_write_off(INTEGER, INTEGER, BIGINT, TEXT)
   TO anon, authenticated;
+
+-- ── Mahsulot tarjimalari (bo'sh bo'lsa to'ldiriladi) ──
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS name_ru TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS name_en TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS description_ru TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS description_en TEXT NOT NULL DEFAULT '';
+
+UPDATE public.products SET
+  name_ru = 'Кепка с логотипом',
+  name_en = 'Cap with logo',
+  description_ru = 'Официальная кепка бренда ТУИТ',
+  description_en = 'Official TUIT brand cap'
+WHERE name = 'Logotipli kepka'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Футболка с логотипом',
+  name_en = 'T-shirt with logo',
+  description_ru = 'Хлопковая футболка с логотипом ТУИТ',
+  description_en = 'Cotton T-shirt with the TUIT logo'
+WHERE name = 'Logotipli futbolka'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Футболка TERRO PRO с логотипом',
+  name_en = 'TERRO PRO T-shirt with logo',
+  description_ru = 'Качественная брендовая футболка TERRO PRO',
+  description_en = 'Quality TERRO PRO brand T-shirt'
+WHERE name = 'Logotipli futbolka TERRO PRO'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Маска с логотипом',
+  name_en = 'Face mask with logo',
+  description_ru = 'Тканевая маска бренда ТУИТ',
+  description_en = 'TUIT brand fabric mask'
+WHERE name = 'Logotipli niqob'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Рюкзак с логотипом',
+  name_en = 'Backpack with logo',
+  description_ru = 'Качественный студенческий рюкзак',
+  description_en = 'Quality student backpack'
+WHERE name = 'Logotipli ryukzak'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Кружка с логотипом',
+  name_en = 'Mug with logo',
+  description_ru = 'Керамическая кружка с логотипом ТУИТ',
+  description_en = 'Ceramic mug with the TUIT logo'
+WHERE name = 'Logotipli krujka'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Термос с логотипом',
+  name_en = 'Thermos with logo',
+  description_ru = 'Металлический термос, сохраняющий температуру',
+  description_en = 'Insulated metal thermos'
+WHERE name = 'Logotipli termos'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Зонт с логотипом (большой)',
+  name_en = 'Large umbrella with logo',
+  description_ru = 'Прочный зонт с логотипом ТУИТ',
+  description_en = 'Sturdy umbrella with the TUIT logo'
+WHERE name = 'Logotipli soyabon (katta)'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Зонт с логотипом (компактный)',
+  name_en = 'Compact umbrella with logo',
+  description_ru = 'Компактный зонт с логотипом ТУИТ',
+  description_en = 'Compact umbrella with the TUIT logo'
+WHERE name = 'Logotipli soyabon (ixcham)'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Пауэрбанк с логотипом',
+  name_en = 'Power bank with logo',
+  description_ru = 'Портативное зарядное устройство',
+  description_en = 'Portable power bank'
+WHERE name = 'Logotipli quvvatlagich'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Флешка с логотипом',
+  name_en = 'USB flash drive with logo',
+  description_ru = 'Брендовая USB-флешка',
+  description_en = 'Branded USB flash drive'
+WHERE name = 'Logotipli fleshka'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Ручка с логотипом',
+  name_en = 'Pen with logo',
+  description_ru = 'Официальная ручка ТУИТ',
+  description_en = 'Official TUIT pen'
+WHERE name = 'Logotipli ruchka'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Чехол с логотипом',
+  name_en = 'Case with logo',
+  description_ru = 'Специальный брендовый чехол',
+  description_en = 'Special brand case'
+WHERE name = 'Logotipli g‘ilof'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Визитница с логотипом',
+  name_en = 'Card holder with logo',
+  description_ru = 'Качественная кожаная визитница',
+  description_en = 'Quality leather card holder'
+WHERE name = 'Logotipli vizitka g‘ilofi'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Коврик для мыши с логотипом',
+  name_en = 'Mouse pad with logo',
+  description_ru = 'Брендовый коврик для мыши',
+  description_en = 'Branded mouse pad'
+WHERE name = 'Logotipli gilamcha'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Блокнот с логотипом',
+  name_en = 'Notebook with logo',
+  description_ru = 'Блокнот ТУИТ',
+  description_en = 'TUIT notebook'
+WHERE name = 'Logotipli bloknot'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Ежедневник с логотипом',
+  name_en = 'Diary with logo',
+  description_ru = 'Официальный ежедневник в твёрдой обложке',
+  description_en = 'Official hardcover diary'
+WHERE name = 'Logotipli kundalik'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Брелок с логотипом (металл)',
+  name_en = 'Metal keychain with logo',
+  description_ru = 'Металлический брелок',
+  description_en = 'Metal keychain'
+WHERE name = 'Logotipli brelok (metall)'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Брелок с логотипом (стандарт)',
+  name_en = 'Standard keychain with logo',
+  description_ru = 'Стандартный брелок для ключей',
+  description_en = 'Standard keychain'
+WHERE name = 'Logotipli brelok (standart)'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Часы с логотипом',
+  name_en = 'Clock with logo',
+  description_ru = 'Настенные или настольные часы',
+  description_en = 'Wall or desk clock'
+WHERE name = 'Logotipli soat'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Подарочный набор с логотипом',
+  name_en = 'Gift set with logo',
+  description_ru = 'Основной брендовый подарочный набор',
+  description_en = 'Main brand gift set'
+WHERE name = 'Logotipli sovg‘a to‘plami'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Подарочный набор с логотипом — стандарт',
+  name_en = 'Standard gift set with logo',
+  description_ru = 'Стандартный подарочный набор',
+  description_en = 'Standard bundled gift set'
+WHERE name = 'Logotipli sovg‘a to‘plami — standart'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Подарочный набор с логотипом — расширенный',
+  name_en = 'Extended gift set with logo',
+  description_ru = 'Расширенный мерч-набор',
+  description_en = 'Extended merch set'
+WHERE name = 'Logotipli sovg‘a to‘plami — kengaytirilgan'
+  AND COALESCE(name_ru, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Подарочный набор с логотипом — премиум',
+  name_en = 'Premium gift set with logo',
+  description_ru = 'Эксклюзивный премиум-набор',
+  description_en = 'Exclusive premium gift set'
+WHERE name = 'Logotipli sovg‘a to‘plami — premium'
+  AND COALESCE(name_ru, '') = '';

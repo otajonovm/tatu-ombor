@@ -23,6 +23,7 @@ from keyboards import (
   role_reply_keyboard,
 )
 from locales import button_values, t
+from locales.products import localized_name
 from states import OrderStates
 from services.qr import build_claim_qr_png
 from supabase_db import (
@@ -95,7 +96,7 @@ def _product_lines(items: list[dict], lang: str) -> str:
     t(
       lang,
       "slip_product",
-      name=escape(str(row.get("product_name") or t(lang, "product_fallback"))),
+      name=escape(localized_name(row, lang) or t(lang, "product_fallback")),
       qty=int(row["quantity"]),
     )
     for row in items
@@ -126,7 +127,7 @@ async def _stock_lines(items: list[dict], lang: str) -> str:
   for row in items:
     product = await asyncio.to_thread(get_product, int(row["product_id"]))
     left = "—" if not product else str(product.get("quantity", "—"))
-    name = escape(str(row.get("product_name") or t(lang, "product_fallback")))
+    name = escape(localized_name(row, lang) or t(lang, "product_fallback"))
     lines.append(t(lang, "stock_line", name=name, qty=int(row["quantity"]), left=left))
   return "\n".join(lines) if lines else "—"
 

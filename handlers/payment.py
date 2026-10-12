@@ -23,6 +23,7 @@ from config import (
 from filters.admin import is_admin
 from keyboards import client_reply_keyboard, pay_order_keyboard
 from locales import t
+from locales.products import localized_name
 from supabase_db import (
   format_price,
   get_order,
@@ -122,10 +123,11 @@ def _invoice_title(order_id: int) -> str:
   return title[:INVOICE_TITLE_LIMIT]
 
 
-def _invoice_description(order_id: int, items: list[dict]) -> str:
+def _invoice_description(order_id: int, items: list[dict], lang: str = "uz") -> str:
   parts: list[str] = []
   for item in items[:8]:
-    name = _plain_invoice_text(str(item.get("product_name") or "Mahsulot")) or "Mahsulot"
+    raw = localized_name(item, lang) or "Mahsulot"
+    name = _plain_invoice_text(raw) or "Mahsulot"
     parts.append(f"{name} x {int(item['quantity'])}")
   if len(items) > 8:
     parts.append(f"va yana {len(items) - 8} ta")
@@ -135,21 +137,26 @@ def _invoice_description(order_id: int, items: list[dict]) -> str:
   return description
 
 
-def _price_label(items: list[dict]) -> str:
+def _price_label(items: list[dict], lang: str = "uz") -> str:
   """Payme ba'zi belgilarni Invalid Params deb qaytaradi, shuning uchun bitta oddiy nom."""
   raw = "Mahsulot"
   if len(items) == 1:
-    raw = str(items[0].get("product_name") or "Mahsulot")
+    raw = localized_name(items[0], lang) or "Mahsulot"
   cleaned = "".join(ch for ch in raw if ch.isalnum() or ch in " -")
   cleaned = " ".join(cleaned.split())
   return (cleaned or "Mahsulot")[:PRICE_LABEL_LIMIT]
 
 
-def _invoice_prices(order_id: int, items: list[dict], total_som: int) -> list[LabeledPrice]:
+def _invoice_prices(
+  order_id: int,
+  items: list[dict],
+  total_som: int,
+  lang: str = "uz",
+) -> list[LabeledPrice]:
   """Bitta qator, summa qat'iy int tiyin: int(so'm * 100)."""
   del order_id
   amount = int(int(total_som) * 100)
-  return [LabeledPrice(label=_price_label(items), amount=amount)]
+  return [LabeledPrice(label=_price_label(items, lang), amount=amount)]
 
 
 def _evaluate_pre_checkout(
@@ -225,11 +232,11 @@ async def send_order_invoice(
   invoice_kwargs: dict[str, object] = {
     "chat_id": chat_id,
     "title": _invoice_title(order_id),
-    "description": _invoice_description(order_id, items),
+    "description": _invoice_description(order_id, items, lang),
     "payload": f"order_{order_id}_{provider}",
     "provider_token": token,
     "currency": "UZS",
-    "prices": _invoice_prices(order_id, items, total_som),
+    "prices": _invoice_prices(order_id, items, total_som, lang),
     "start_parameter": f"pay_order_{order_id}",
     "is_flexible": False,
   }
@@ -424,7 +431,7 @@ async def on_successful_payment(message: Message, lang: str) -> None:
 
   fallback = t(lang, "product_fallback")
   item_lines = "\n".join(
-    f"• {escape(str(row.get('product_name') or fallback))} × {row['quantity']}"
+    f"• {escape(localized_name(row, lang) or fallback)} × {row['quantity']}"
     for row in items
   ) or "—"
 
