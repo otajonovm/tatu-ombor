@@ -145,4 +145,46 @@ PRODUCT_TRANSLATIONS: dict[str, dict[str, str]] = {
     "description_ru": "Эксклюзивный премиум-набор",
     "description_en": "Exclusive premium gift set",
   },
+  "Ruchka": {
+    "name_ru": "Ручка",
+    "name_en": "Pen",
+    "description_ru": "Хорошая ручка",
+    "description_en": "A good pen",
+  },
+  "TATU ruchka": {
+    "name_ru": "Ручка ТУИТ",
+    "name_en": "TUIT pen",
+    "description_ru": "Премиальная ручка бренда ТУИТ",
+    "description_en": "Premium TUIT brand pen",
+  },
+  "Stiker to'plami": {
+    "name_ru": "Набор стикеров",
+    "name_en": "Sticker pack",
+    "description_ru": "Набор стикеров ТУИТ",
+    "description_en": "TUIT sticker pack",
+  },
+  "Ruchka (TATU)": {
+    "name_ru": "Ручка (ТУИТ)",
+    "name_en": "Pen (TUIT)",
+    "description_ru": "Ручка бренда ТУИТ",
+    "description_en": "TUIT brand pen",
+  },
+  "Oq kepka": {
+    "name_ru": "Белая кепка",
+    "name_en": "White cap",
+    "description_ru": "Белая кепка бренда ТУИТ",
+    "description_en": "White TUIT brand cap",
+  },
+  "Niqob": {
+    "name_ru": "Маска",
+    "name_en": "Face mask",
+    "description_ru": "Маска бренда ТУИТ",
+    "description_en": "TUIT brand mask",
+  },
+  "Bloknot": {
+    "name_ru": "Блокнот",
+    "name_en": "Notebook",
+    "description_ru": "Блокнот бренда ТУИТ",
+    "description_en": "TUIT brand notebook",
+  },
 }

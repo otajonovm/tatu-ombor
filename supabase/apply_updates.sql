@@ -337,3 +337,59 @@ UPDATE public.products SET
   description_en = 'Exclusive premium gift set'
 WHERE name = 'Logotipli sovg‘a to‘plami — premium'
   AND COALESCE(name_ru, '') = '';
+UPDATE public.products SET
+  name_ru = 'Ручка',
+  name_en = 'Pen',
+  description_ru = 'Хорошая ручка',
+  description_en = 'A good pen'
+WHERE name = 'Ruchka'
+  AND COALESCE(name_en, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Ручка ТУИТ',
+  name_en = 'TUIT pen',
+  description_ru = 'Премиальная ручка бренда ТУИТ',
+  description_en = 'Premium TUIT brand pen'
+WHERE name = 'TATU ruchka'
+  AND COALESCE(name_en, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Набор стикеров',
+  name_en = 'Sticker pack',
+  description_ru = 'Набор стикеров ТУИТ',
+  description_en = 'TUIT sticker pack'
+WHERE name = 'Stiker to''plami'
+  AND COALESCE(name_en, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Ручка (ТУИТ)',
+  name_en = 'Pen (TUIT)',
+  description_ru = 'Ручка бренда ТУИТ',
+  description_en = 'TUIT brand pen'
+WHERE name = 'Ruchka (TATU)'
+  AND COALESCE(name_en, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Белая кепка',
+  name_en = 'White cap',
+  description_ru = 'Белая кепка бренда ТУИТ',
+  description_en = 'White TUIT brand cap'
+WHERE name = 'Oq kepka'
+  AND COALESCE(name_en, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Маска',
+  name_en = 'Face mask',
+  description_ru = 'Маска бренда ТУИТ',
+  description_en = 'TUIT brand mask'
+WHERE name = 'Niqob'
+  AND COALESCE(name_en, '') = '';
+
+UPDATE public.products SET
+  name_ru = 'Блокнот',
+  name_en = 'Notebook',
+  description_ru = 'Блокнот бренда ТУИТ',
+  description_en = 'TUIT brand notebook'
+WHERE name = 'Bloknot'
+  AND COALESCE(name_en, '') = '';
+
