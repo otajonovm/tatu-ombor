@@ -22,10 +22,12 @@ from config import (
 )
 from filters.admin import is_admin
 from keyboards import client_reply_keyboard, pay_order_keyboard
+from locales import t
 from supabase_db import (
   format_price,
   get_order,
   get_order_items,
+  get_user_language,
   mark_order_paid,
   parse_payment_payload,
   som_to_tiyin,
@@ -35,6 +37,34 @@ from supabase_db import (
 
 logger = logging.getLogger(__name__)
 router = Router(name="payment")
+
+_PAYMENT_ERRORS = {
+  "Noto'g'ri to'lov ma'lumoti.": "err_bad_payload",
+  "Buyurtma topilmadi.": "err_order_missing",
+  "Bu to'lov sizning buyurtmangizga tegishli emas.": "err_not_owner",
+  "To'lov summasi o'zgargan. Qaytadan urinib ko'ring.": "err_amount_changed",
+  "Valyuta qo'llab-quvvatlanmaydi.": "err_currency",
+  "Buyurtma allaqachon to'langan.": "err_already_paid",
+  "Bu buyurtma uchun to'lov qabul qilinmaydi.": "err_not_payable",
+  "Buyurtma summasi noto'g'ri.": "err_bad_total",
+  "Buyurtmada mahsulot yo'q.": "err_no_items",
+}
+
+
+def user_error(lang: str, message: str) -> str:
+  key = _PAYMENT_ERRORS.get(message)
+  if key:
+    return t(lang, key)
+  prefix = "«"
+  suffix = "» sotuvda emas."
+  if message.startswith(prefix) and message.endswith(suffix):
+    name = message[len(prefix) : -len(suffix)]
+    return t(lang, "err_not_for_sale", name=escape(name))
+  return message
+
+
+def _client_kb(user_id: int, lang: str):
+  return client_reply_keyboard(show_admin_back=is_admin(user_id), lang=lang)
 
 # Telegram UZS. Click hujjatidagi pastki chegara 10 000 so'm, Payme — 5 000 so'm.
 PROVIDERS: dict[str, dict[str, object]] = {
@@ -156,14 +186,15 @@ async def send_order_invoice(
   *,
   provider: str,
   intro_text: str | None = None,
+  lang: str = "uz",
 ) -> bool:
   """Tanlangan provayder (Click yoki Payme) uchun invoys yuboradi."""
   meta = _provider_meta(provider)
   if meta is None:
     await bot.send_message(
       chat_id,
-      "⚠️ Bu to'lov usuli sozlanmagan. Boshqa usulni tanlang.",
-      reply_markup=pay_order_keyboard(int(order["id"])),
+      t(lang, "pay_provider_off"),
+      reply_markup=pay_order_keyboard(int(order["id"]), lang),
     )
     return False
 
@@ -173,7 +204,7 @@ async def send_order_invoice(
   order_id = int(order["id"])
   ok, message = await asyncio.to_thread(validate_order_for_payment, order_id)
   if not ok:
-    await bot.send_message(chat_id, f"❌ {message}")
+    await bot.send_message(chat_id, f"❌ {user_error(lang, message)}")
     return False
 
   items = await asyncio.to_thread(get_order_items, order_id)
@@ -181,9 +212,8 @@ async def send_order_invoice(
   if total_som < min_som:
     await bot.send_message(
       chat_id,
-      f"❌ {label} orqali minimal to'lov {format_price(min_som)}.\n"
-      "Buyurtma saqlandi — boshqa usulni tanlang yoki savatga mahsulot qo'shing.",
-      reply_markup=pay_order_keyboard(order_id),
+      t(lang, "pay_min", label=label, amount=format_price(min_som)),
+      reply_markup=pay_order_keyboard(order_id, lang),
     )
     return False
 
@@ -215,39 +245,37 @@ async def send_order_invoice(
     detail = escape(_hide_tokens(str(error)))[:300]
     await bot.send_message(
       chat_id,
-      f"❌ {label} oynasi ochilmadi. Buyurtma saqlandi — "
-      "quyidagi tugma orqali qayta urinib ko'ring.\n"
-      f"<code>{detail}</code>",
-      reply_markup=pay_order_keyboard(order_id),
+      t(lang, "pay_window_failed", label=label, detail=detail),
+      reply_markup=pay_order_keyboard(order_id, lang),
     )
     return False
   return True
 
 
 @router.callback_query(F.data.startswith("client:pay:"))
-async def cb_pay_order(callback: CallbackQuery) -> None:
+async def cb_pay_order(callback: CallbackQuery, lang: str) -> None:
   parts = (callback.data or "").split(":")
   raw = parts[2] if len(parts) > 2 else ""
   provider = parts[3].strip().lower() if len(parts) > 3 else ""
   if not raw.isdigit():
-    await callback.answer("Buyurtma topilmadi.", show_alert=True)
+    await callback.answer(t(lang, "order_not_found"), show_alert=True)
     return
 
   order = await asyncio.to_thread(get_order, int(raw))
   if not order:
-    await callback.answer("Buyurtma topilmadi.", show_alert=True)
+    await callback.answer(t(lang, "order_not_found"), show_alert=True)
     return
   if int(order["user_id"]) != callback.from_user.id and not is_admin(
     callback.from_user.id
   ):
-    await callback.answer("⛔ Ruxsat yo'q.", show_alert=True)
+    await callback.answer(t(lang, "no_permission"), show_alert=True)
     return
 
   if _provider_meta(provider) is None:
     await callback.answer()
     chat = callback.message
-    text = "💳 To'lov usulini tanlang:"
-    markup = pay_order_keyboard(int(order["id"]))
+    text = t(lang, "choose_payment")
+    markup = pay_order_keyboard(int(order["id"]), lang)
     if chat is not None:
       await chat.answer(text, reply_markup=markup)
     else:
@@ -266,12 +294,13 @@ async def cb_pay_order(callback: CallbackQuery) -> None:
     chat_id,
     order,
     provider=provider,
-    intro_text=f"💳 Buyurtma #{order['id']} — {label}:",
+    intro_text=t(lang, "pay_intro", order_id=order["id"], label=label),
+    lang=lang,
   )
 
 
 @router.pre_checkout_query()
-async def on_pre_checkout(query: PreCheckoutQuery) -> None:
+async def on_pre_checkout(query: PreCheckoutQuery, lang: str) -> None:
   """Pul yechilishidan oldin ombor tekshiruvi. Javob 10 soniya ichida."""
   logger.info(
     "pre_checkout user_id=%s currency=%s total=%s payload=%s",
@@ -292,12 +321,12 @@ async def on_pre_checkout(query: PreCheckoutQuery) -> None:
     logger.exception("pre_checkout xato payload=%s", query.invoice_payload)
     await query.answer(
       ok=False,
-      error_message="To'lovni vaqtincha tekshirib bo'lmadi. Qayta urinib ko'ring.",
+      error_message=t(lang, "pre_checkout_fail")[:200],
     )
     return
 
   if not ok:
-    await query.answer(ok=False, error_message=message[:200])
+    await query.answer(ok=False, error_message=user_error(lang, message)[:200])
     return
   await query.answer(ok=True)
 
@@ -320,14 +349,14 @@ def _payer_contacts(message: Message, order: dict | None) -> tuple[str, str]:
 
 
 @router.message(F.successful_payment)
-async def on_successful_payment(message: Message) -> None:
+async def on_successful_payment(message: Message, lang: str) -> None:
   payment = message.successful_payment
   if not payment:
     return
 
   order_id, provider = parse_payment_payload(payment.invoice_payload or "")
   if order_id is None:
-    await message.answer("❌ To'lov qabul qilindi, lekin buyurtma topilmadi.")
+    await message.answer(t(lang, "pay_unknown_order"))
     logger.error("successful_payment unknown payload: %s", payment.invoice_payload)
     return
 
@@ -362,64 +391,78 @@ async def on_successful_payment(message: Message) -> None:
       status_message,
     )
     await message.answer(
-      f"⚠️ To'lov qabul qilindi, lekin buyurtma #{order_id} ni "
-      f"yangilab bo'lmadi.\nSabab: {status_message}\n"
-      f"🧾 {label} ID: <code>{safe_charge}</code>\n"
-      "Iltimos, admin bilan bog'laning.",
-      reply_markup=client_reply_keyboard(
-        show_admin_back=is_admin(message.from_user.id)
+      t(
+        lang,
+        "pay_db_fail",
+        order_id=order_id,
+        reason=escape(status_message),
+        label=label,
+        charge=safe_charge,
       ),
+      reply_markup=_client_kb(message.from_user.id, lang),
     )
     for admin_id in ADMIN_IDS:
       try:
+        admin_lang = await asyncio.to_thread(get_user_language, admin_id)
         await message.bot.send_message(
           admin_id,
-          f"🚨 To'lov o'tdi, baza xato!\n"
-          f"Buyurtma #{order_id}\n"
-          f"👤 {payer_name}\n"
-          f"📞 {payer_phone}\n"
-          f"💰 {format_price(paid_som)}\n"
-          f"{status_message}\n"
-          f"🧾 {label}: <code>{safe_charge}</code>",
+          t(
+            admin_lang,
+            "admin_pay_db_fail",
+            order_id=order_id,
+            name=escape(payer_name),
+            phone=escape(payer_phone),
+            total=format_price(paid_som),
+            reason=escape(status_message),
+            label=label,
+            charge=safe_charge,
+          ),
         )
       except Exception:
         logger.warning("Admin %s ga xato-notify yuborilmadi", admin_id)
     return
 
+  fallback = t(lang, "product_fallback")
   item_lines = "\n".join(
-    f"• {row.get('product_name') or 'Mahsulot'} × {row['quantity']}"
+    f"• {escape(str(row.get('product_name') or fallback))} × {row['quantity']}"
     for row in items
   ) or "—"
 
   await message.answer(
-    f"✅ <b>To'lov tasdiqlandi</b>\n\n"
-    f"🆔 Buyurtma: <b>#{order_id}</b>\n"
-    f"💰 Summa: <b>{format_price(paid_som)}</b>\n"
-    f"🧾 {label} ID: <code>{safe_charge}</code>\n\n"
-    f"{item_lines}\n\n"
-    "Mahsulotni C-bino, 480-xonadan olib ketasiz. "
-    "Karta va QR pastda.",
-    reply_markup=client_reply_keyboard(
-      show_admin_back=is_admin(message.from_user.id)
+    t(
+      lang,
+      "pay_ok",
+      order_id=order_id,
+      total=format_price(paid_som),
+      label=label,
+      charge=safe_charge,
+      items=item_lines,
     ),
+    reply_markup=_client_kb(message.from_user.id, lang),
   )
   from handlers.orders import show_my_orders
 
-  await show_my_orders(message, message.from_user.id)
+  await show_my_orders(message, message.from_user.id, lang)
 
   if not fresh_payment:
     return
 
-  notify = (
-    f"💳 <b>To'langan buyurtma #{order_id}</b>\n"
-    f"👤 {payer_name}\n"
-    f"📞 {payer_phone}\n"
-    f"💰 {format_price(paid_som)}\n"
-    f"🧾 {label}: <code>{safe_charge}</code>\n\n"
-    f"{item_lines}"
-  )
   for admin_id in ADMIN_IDS:
     try:
-      await message.bot.send_message(admin_id, notify)
+      admin_lang = await asyncio.to_thread(get_user_language, admin_id)
+      await message.bot.send_message(
+        admin_id,
+        t(
+          admin_lang,
+          "admin_paid",
+          order_id=order_id,
+          name=escape(payer_name),
+          phone=escape(payer_phone),
+          total=format_price(paid_som),
+          label=label,
+          charge=safe_charge,
+          items=item_lines,
+        ),
+      )
     except Exception as error:
       logger.warning("Admin %s ga notify yuborilmadi: %s", admin_id, error)

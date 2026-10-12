@@ -18,8 +18,8 @@ ALTER TABLE order_items ADD COLUMN IF NOT EXISTS color TEXT;
 
 DO $$
 BEGIN
-  ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
-  ALTER TABLE orders
+  ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_status_check;
+  ALTER TABLE public.orders
     ADD CONSTRAINT orders_status_check
     CHECK (status IN ('pending', 'paid', 'approved', 'delivered', 'rejected'));
 EXCEPTION
@@ -119,6 +119,21 @@ BEGIN
   END IF;
 END;
 $$;
+
+-- ── Foydalanuvchi tili ────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.users (
+  user_id       BIGINT PRIMARY KEY,
+  language_code VARCHAR(5) NOT NULL DEFAULT 'uz',
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.users TO anon, authenticated;
+
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "bot_users_access" ON public.users;
+CREATE POLICY "bot_users_access" ON public.users
+  FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 
 GRANT EXECUTE ON FUNCTION shop_stock_in(INTEGER, INTEGER, BIGINT, TEXT)
   TO anon, authenticated;

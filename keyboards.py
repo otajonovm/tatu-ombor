@@ -7,6 +7,7 @@ from aiogram.types import (
 )
 
 from config import CLICK_PROVIDER_TOKEN, PAYME_PROVIDER_TOKEN, WEBAPP_URL
+from locales import t
 from supabase_db import format_price, get_all_products, get_orders_by_status
 
 # Reply tugmalar
@@ -14,7 +15,6 @@ BTN_CATALOG = "🛍 Katalog"
 BTN_CART = "🛒 Savat"
 BTN_MY_ORDERS = "📦 Mening buyurtmalarim"
 BTN_PICKUP = "📍 Qayerdan olib ketaman?"
-BTN_ABOUT = "ℹ️ Biz haqimizda"
 
 BTN_ADD_PRODUCT = "➕ Mahsulot qo'shish"
 BTN_STOCK_IN = "📥 Kirim qilish"
@@ -26,19 +26,45 @@ BTN_ADMIN_MENU = "⚙️ Admin menyu"
 BTN_CANCEL = "❌ Bekor qilish"
 
 
-def client_reply_keyboard(show_admin_back: bool = False) -> ReplyKeyboardMarkup:
+def language_keyboard() -> InlineKeyboardMarkup:
+  return InlineKeyboardMarkup(
+    inline_keyboard=[
+      [
+        InlineKeyboardButton(text="🇺🇿 O'zbekcha", callback_data="lang:uz"),
+        InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang:ru"),
+        InlineKeyboardButton(text="🇬🇧 English", callback_data="lang:en"),
+      ]
+    ]
+  )
+
+
+def client_reply_keyboard(
+  show_admin_back: bool = False,
+  lang: str = "uz",
+) -> ReplyKeyboardMarkup:
   rows = [
-    [KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART)],
-    [KeyboardButton(text=BTN_MY_ORDERS), KeyboardButton(text=BTN_ABOUT)],
-    [KeyboardButton(text=BTN_PICKUP)],
+    [
+      KeyboardButton(text=t(lang, "btn_catalog")),
+      KeyboardButton(text=t(lang, "btn_cart")),
+    ],
+    [KeyboardButton(text=t(lang, "btn_orders"))],
+    [
+      KeyboardButton(text=t(lang, "btn_pickup")),
+      KeyboardButton(text=t(lang, "btn_language")),
+    ],
   ]
   if WEBAPP_URL:
     rows.insert(
       0,
-      [KeyboardButton(text="🛍 Do'konni ochish", web_app=WebAppInfo(url=WEBAPP_URL))],
+      [
+        KeyboardButton(
+          text=t(lang, "btn_open_shop"),
+          web_app=WebAppInfo(url=WEBAPP_URL),
+        )
+      ],
     )
   if show_admin_back:
-    rows.append([KeyboardButton(text=BTN_ADMIN_MENU)])
+    rows.append([KeyboardButton(text=t(lang, "btn_admin_menu"))])
   return ReplyKeyboardMarkup(
     keyboard=rows,
     resize_keyboard=True,
@@ -46,11 +72,12 @@ def client_reply_keyboard(show_admin_back: bool = False) -> ReplyKeyboardMarkup:
   )
 
 
-def admin_reply_keyboard() -> ReplyKeyboardMarkup:
+def admin_reply_keyboard(lang: str = "uz") -> ReplyKeyboardMarkup:
   rows = [
       [KeyboardButton(text=BTN_ADD_PRODUCT), KeyboardButton(text=BTN_STOCK_IN)],
       [KeyboardButton(text=BTN_MANAGE), KeyboardButton(text=BTN_NEW_ORDERS)],
       [KeyboardButton(text=BTN_STATS), KeyboardButton(text=BTN_CLIENT_MENU)],
+      [KeyboardButton(text=t(lang, "btn_language"))],
   ]
   if WEBAPP_URL:
     rows.insert(
@@ -64,19 +91,21 @@ def admin_reply_keyboard() -> ReplyKeyboardMarkup:
   )
 
 
-def role_reply_keyboard(is_admin_user: bool) -> ReplyKeyboardMarkup:
-  return admin_reply_keyboard() if is_admin_user else client_reply_keyboard()
+def role_reply_keyboard(is_admin_user: bool, lang: str = "uz") -> ReplyKeyboardMarkup:
+  if is_admin_user:
+    return admin_reply_keyboard(lang)
+  return client_reply_keyboard(lang=lang)
 
 
-def cancel_reply_keyboard() -> ReplyKeyboardMarkup:
+def cancel_reply_keyboard(lang: str = "uz") -> ReplyKeyboardMarkup:
   return ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text=BTN_CANCEL)]],
+    keyboard=[[KeyboardButton(text=t(lang, "btn_cancel"))]],
     resize_keyboard=True,
     is_persistent=True,
   )
 
 
-def catalog_keyboard(products: list[dict]) -> InlineKeyboardMarkup:
+def catalog_keyboard(products: list[dict], lang: str = "uz") -> InlineKeyboardMarkup:
   buttons: list[list[InlineKeyboardButton]] = []
   for product in products:
     label = f"{product['name']} — {format_price(product['price'])}"
@@ -90,37 +119,37 @@ def catalog_keyboard(products: list[dict]) -> InlineKeyboardMarkup:
     )
   if not buttons:
     buttons.append(
-      [InlineKeyboardButton(text="Mahsulotlar yo'q", callback_data="noop")]
+      [InlineKeyboardButton(text=t(lang, "btn_no_products"), callback_data="noop")]
     )
   return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def product_buy_keyboard(product_id: int) -> InlineKeyboardMarkup:
+def product_buy_keyboard(product_id: int, lang: str = "uz") -> InlineKeyboardMarkup:
   return InlineKeyboardMarkup(
     inline_keyboard=[
       [
         InlineKeyboardButton(
-          text="🛒 Savatga +1",
+          text=t(lang, "btn_add_one"),
           callback_data=f"client:addtocart1:{product_id}",
         ),
         InlineKeyboardButton(
-          text="⚡️ 1 dona buyurtma",
+          text=t(lang, "btn_buy_one"),
           callback_data=f"client:buy1:{product_id}",
         ),
       ],
       [
         InlineKeyboardButton(
-          text="🛒 Boshqa miqdor",
+          text=t(lang, "btn_add_qty"),
           callback_data=f"client:addcart:{product_id}",
         ),
         InlineKeyboardButton(
-          text="⚡️ Boshqa miqdor",
+          text=t(lang, "btn_buy_qty"),
           callback_data=f"client:buynow:{product_id}",
         ),
       ],
       [
         InlineKeyboardButton(
-          text="◀️ Katalog",
+          text=t(lang, "btn_back_catalog"),
           callback_data="client:catalog",
         )
       ],
@@ -128,25 +157,25 @@ def product_buy_keyboard(product_id: int) -> InlineKeyboardMarkup:
   )
 
 
-def phone_request_keyboard() -> ReplyKeyboardMarkup:
+def phone_request_keyboard(lang: str = "uz") -> ReplyKeyboardMarkup:
   return ReplyKeyboardMarkup(
     keyboard=[
-      [KeyboardButton(text="📱 Raqamni ulashish", request_contact=True)],
-      [KeyboardButton(text=BTN_CANCEL)],
+      [KeyboardButton(text=t(lang, "btn_share_phone"), request_contact=True)],
+      [KeyboardButton(text=t(lang, "btn_cancel"))],
     ],
     resize_keyboard=True,
     is_persistent=True,
   )
 
 
-def pay_order_keyboard(order_id: int) -> InlineKeyboardMarkup:
+def pay_order_keyboard(order_id: int, lang: str = "uz") -> InlineKeyboardMarkup:
   """Click va Payme — ikkalasi ham yoqilgan bo'lsa, mijoz o'zi tanlaydi."""
   rows: list[list[InlineKeyboardButton]] = []
   if CLICK_PROVIDER_TOKEN:
     rows.append(
       [
         InlineKeyboardButton(
-          text="💳 Click orqali to'lash",
+          text=t(lang, "btn_pay_click"),
           callback_data=f"client:pay:{order_id}:click",
         )
       ]
@@ -155,7 +184,7 @@ def pay_order_keyboard(order_id: int) -> InlineKeyboardMarkup:
     rows.append(
       [
         InlineKeyboardButton(
-          text="🟢 Payme orqali to'lash",
+          text=t(lang, "btn_pay_payme"),
           callback_data=f"client:pay:{order_id}:payme",
         )
       ]
@@ -163,13 +192,13 @@ def pay_order_keyboard(order_id: int) -> InlineKeyboardMarkup:
   return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def cart_keyboard(has_items: bool) -> InlineKeyboardMarkup:
+def cart_keyboard(has_items: bool, lang: str = "uz") -> InlineKeyboardMarkup:
   rows: list[list[InlineKeyboardButton]] = []
   if has_items:
     rows.append(
       [
         InlineKeyboardButton(
-          text="✅ Buyurtma berish",
+          text=t(lang, "btn_checkout"),
           callback_data="client:checkout",
         )
       ]
@@ -177,7 +206,7 @@ def cart_keyboard(has_items: bool) -> InlineKeyboardMarkup:
     rows.append(
       [
         InlineKeyboardButton(
-          text="🗑 Savatni tozalash",
+          text=t(lang, "btn_clear_cart"),
           callback_data="client:clearcart",
         )
       ]
@@ -185,7 +214,7 @@ def cart_keyboard(has_items: bool) -> InlineKeyboardMarkup:
   rows.append(
     [
       InlineKeyboardButton(
-        text="🛍 Katalogga",
+        text=t(lang, "btn_to_catalog"),
         callback_data="client:catalog",
       )
     ]
@@ -193,10 +222,15 @@ def cart_keyboard(has_items: bool) -> InlineKeyboardMarkup:
   return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def cancel_inline_keyboard() -> InlineKeyboardMarkup:
+def cancel_inline_keyboard(lang: str = "uz") -> InlineKeyboardMarkup:
   return InlineKeyboardMarkup(
     inline_keyboard=[
-      [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="client:cancel")]
+      [
+        InlineKeyboardButton(
+          text=t(lang, "btn_cancel"),
+          callback_data="client:cancel",
+        )
+      ]
     ]
   )
 
@@ -314,23 +348,29 @@ def admin_orders_keyboard() -> InlineKeyboardMarkup:
   return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def order_slip_keyboard(order_id: int, *, ready: bool, pending: bool) -> InlineKeyboardMarkup:
+def order_slip_keyboard(
+  order_id: int,
+  *,
+  ready: bool,
+  pending: bool,
+  lang: str = "uz",
+) -> InlineKeyboardMarkup:
   rows: list[list[InlineKeyboardButton]] = []
   if ready:
     rows.append(
       [
         InlineKeyboardButton(
-          text="🏷 Olib ketish kodi (QR)",
+          text=t(lang, "btn_qr"),
           callback_data=f"order:qr:{order_id}",
         )
       ]
     )
   if pending:
-    rows.extend(pay_order_keyboard(order_id).inline_keyboard)
+    rows.extend(pay_order_keyboard(order_id, lang).inline_keyboard)
   rows.append(
     [
       InlineKeyboardButton(
-        text="📍 Qayerdan olib ketaman?",
+        text=t(lang, "btn_pickup"),
         callback_data="order:pickup",
       )
     ]

@@ -12,18 +12,9 @@ from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
-from config import (
-  ORDER_STATUS_LABELS,
-  PICKUP_ADDRESS,
-  PICKUP_CONTACT,
-  PICKUP_GUIDE,
-  PICKUP_HOURS,
-  PICKUP_PHONE,
-)
+from config import PICKUP_CONTACT, PICKUP_PHONE
 from filters.admin import IsAdminFilter, is_admin
 from keyboards import (
-  BTN_MY_ORDERS,
-  BTN_PICKUP,
   cancel_reply_keyboard,
   client_reply_keyboard,
   deliver_order_keyboard,
@@ -31,6 +22,7 @@ from keyboards import (
   phone_request_keyboard,
   role_reply_keyboard,
 )
+from locales import button_values, t
 from states import OrderStates
 from services.qr import build_claim_qr_png
 from supabase_db import (
@@ -38,6 +30,7 @@ from supabase_db import (
   get_order,
   get_order_items,
   get_product,
+  get_user_language,
   get_user_orders,
   mark_order_delivered,
 )
@@ -77,8 +70,14 @@ def order_code(order_id: int) -> str:
   return f"#TATU-{int(order_id)}"
 
 
-def _client_kb(user_id: int):
-  return client_reply_keyboard(show_admin_back=is_admin(user_id))
+def _client_kb(user_id: int, lang: str = "uz"):
+  return client_reply_keyboard(show_admin_back=is_admin(user_id), lang=lang)
+
+
+def _status_label(lang: str, status: str) -> str:
+  key = f"status_{status}"
+  label = t(lang, key)
+  return status if label == key else label
 
 
 async def _order_bundle(order_id: int) -> tuple[dict | None, list[dict]]:
@@ -89,58 +88,62 @@ async def _order_bundle(order_id: int) -> tuple[dict | None, list[dict]]:
   return order, items
 
 
-def _product_lines(items: list[dict]) -> str:
+def _product_lines(items: list[dict], lang: str) -> str:
   if not items:
     return "—"
   return "\n".join(
-    f"🛍 <b>Mahsulot:</b> {escape(str(row.get('product_name') or 'Mahsulot'))} "
-    f"({int(row['quantity'])} dona)"
+    t(
+      lang,
+      "slip_product",
+      name=escape(str(row.get("product_name") or t(lang, "product_fallback"))),
+      qty=int(row["quantity"]),
+    )
     for row in items
   )
 
 
-def customer_slip(order: dict, items: list[dict]) -> str:
+def customer_slip(order: dict, items: list[dict], lang: str) -> str:
   status = order["status"]
-  state = ORDER_STATUS_LABELS.get(status, status)
   lines = [
-    f"🆔 <b>Buyurtma ID:</b> <code>{order_code(order['id'])}</code>",
-    _product_lines(items),
-    f"🔘 <b>Holati:</b> {escape(state)}",
-    f"💰 <b>Summa:</b> {format_price(order['total_price'])}",
+    t(lang, "slip_id", code=order_code(order["id"])),
+    _product_lines(items, lang),
+    t(lang, "slip_status", status=escape(_status_label(lang, status))),
+    t(lang, "slip_sum", total=format_price(order["total_price"])),
   ]
   if status in READY_STATUSES:
     lines.extend(
       [
-        f"📍 <b>Manzil:</b> {PICKUP_ADDRESS}",
-        f"🕒 <b>Ish vaqti:</b> {PICKUP_HOURS}",
-        f"📞 <b>Aloqa / Mas'ul:</b> {PICKUP_CONTACT} ({PICKUP_PHONE})",
+        t(lang, "slip_address", address=t(lang, "pickup_address")),
+        t(lang, "slip_hours", hours=t(lang, "pickup_hours")),
+        t(lang, "slip_contact", contact=PICKUP_CONTACT, phone=PICKUP_PHONE),
       ]
     )
   return "\n".join(lines)
 
 
-async def _stock_lines(items: list[dict]) -> str:
+async def _stock_lines(items: list[dict], lang: str) -> str:
   lines: list[str] = []
   for row in items:
     product = await asyncio.to_thread(get_product, int(row["product_id"]))
     left = "—" if not product else str(product.get("quantity", "—"))
-    name = escape(str(row.get("product_name") or "Mahsulot"))
-    lines.append(f"• {name} × {int(row['quantity'])} (omborda {left} dona)")
+    name = escape(str(row.get("product_name") or t(lang, "product_fallback")))
+    lines.append(t(lang, "stock_line", name=name, qty=int(row["quantity"]), left=left))
   return "\n".join(lines) if lines else "—"
 
 
-async def staff_slip(order: dict, items: list[dict]) -> str:
-  status = ORDER_STATUS_LABELS.get(order["status"], order["status"])
+async def staff_slip(order: dict, items: list[dict], lang: str) -> str:
   name = escape(str(order.get("user_name") or "—"))
   phone = escape(str(order.get("phone_number") or "—"))
-  goods = await _stock_lines(items)
-  return (
-    f"🆔 <b>Buyurtma:</b> <code>{order_code(order['id'])}</code>\n"
-    f"👤 <b>Xaridor:</b> {name}\n"
-    f"📞 <b>Telefon:</b> {phone}\n"
-    f"💰 <b>To'langan summa:</b> {format_price(order['total_price'])}\n"
-    f"🔘 <b>Holat:</b> {escape(status)}\n\n"
-    f"🛍 <b>Mahsulot:</b>\n{goods}"
+  goods = await _stock_lines(items, lang)
+  return t(
+    lang,
+    "staff_slip",
+    code=order_code(order["id"]),
+    name=name,
+    phone=phone,
+    total=format_price(order["total_price"]),
+    status=escape(_status_label(lang, order["status"])),
+    goods=goods,
   )
 
 
@@ -148,25 +151,29 @@ async def notify_customer_delivered(bot, order: dict) -> None:
   user_id = order.get("user_id")
   if not user_id:
     return
-  text = (
-    f"🎉 Buyurtmangiz ({order_code(order['id'])}) muvaffaqiyatli topshirildi! "
-    "TATU Brand Shop'ni tanlaganingiz uchun rahmat 🎓"
-  )
+  lang = await asyncio.to_thread(get_user_language, int(user_id))
+  text = t(lang, "delivered_notice", code=order_code(order["id"]))
   try:
     await bot.send_message(int(user_id), text)
   except Exception:
     logger.warning("Topshirish xabari yuborilmadi user=%s", user_id)
 
 
-async def confirm_delivery(message: Message, order_id: int, *, staff_id: int) -> None:
+async def confirm_delivery(
+  message: Message,
+  order_id: int,
+  *,
+  staff_id: int,
+  lang: str = "uz",
+) -> None:
   """Xodim tasdig'i: status paid/approved → delivered, mijozga xabar."""
   if not is_admin(staff_id):
-    await message.answer("⛔ Bu amal faqat 480-xona xodimi uchun.")
+    await message.answer(t(lang, "staff_only"))
     return
 
   order, items = await _order_bundle(order_id)
   if not order:
-    await message.answer("Buyurtma topilmadi.")
+    await message.answer(t(lang, "order_not_found"))
     return
   already = order["status"] == "delivered"
   ok, result = await asyncio.to_thread(mark_order_delivered, order_id)
@@ -175,25 +182,25 @@ async def confirm_delivery(message: Message, order_id: int, *, staff_id: int) ->
     return
   if already or "allaqachon" in result.lower():
     await message.answer(
-      f"ℹ️ {order_code(order_id)} allaqachon topshirilgan.",
-      reply_markup=role_reply_keyboard(True),
+      t(lang, "already_delivered", code=order_code(order_id)),
+      reply_markup=role_reply_keyboard(True, lang),
     )
     return
   await notify_customer_delivered(message.bot, order)
   await message.answer(
-    f"✅ {order_code(order_id)} topshirildi.\n"
-    f"👤 {escape(str(order.get('user_name') or '—'))}\n"
-    f"{_product_lines(items)}",
-    reply_markup=role_reply_keyboard(True),
+    t(lang, "delivered_ok", code=order_code(order_id))
+    + f"\n👤 {escape(str(order.get('user_name') or '—'))}\n"
+    + _product_lines(items, lang),
+    reply_markup=role_reply_keyboard(True, lang),
   )
 
 
-async def show_my_orders(message: Message, user_id: int) -> None:
+async def show_my_orders(message: Message, user_id: int, lang: str = "uz") -> None:
   orders = await asyncio.to_thread(get_user_orders, user_id)
   if not orders:
     await message.answer(
-      "📦 Sizda hali buyurtmalar yo'q.",
-      reply_markup=_client_kb(user_id),
+      t(lang, "no_orders"),
+      reply_markup=_client_kb(user_id, lang),
     )
     return
 
@@ -201,78 +208,79 @@ async def show_my_orders(message: Message, user_id: int) -> None:
   history = [order for order in orders if order["status"] not in ACTIVE_STATUSES]
   if not active:
     await message.answer(
-      "📦 Hozir olib ketiladigan buyurtma yo'q.",
-      reply_markup=_client_kb(user_id),
+      t(lang, "no_active"),
+      reply_markup=_client_kb(user_id, lang),
     )
   for order in active:
     items = await asyncio.to_thread(get_order_items, int(order["id"]))
     ready = order["status"] in READY_STATUSES
     await message.answer(
-      customer_slip(order, items),
+      customer_slip(order, items, lang),
       reply_markup=order_slip_keyboard(
         int(order["id"]),
         ready=ready,
         pending=order["status"] == "pending",
+        lang=lang,
       ),
     )
   if history:
-    lines = ["🗂 <b>Oldingi buyurtmalar</b>\n"]
+    lines = [t(lang, "history_title") + "\n"]
     for order in history[:10]:
-      state = ORDER_STATUS_LABELS.get(order["status"], order["status"])
+      state = _status_label(lang, order["status"])
       lines.append(
         f"{order_code(order['id'])} — {format_price(order['total_price'])}\n"
         f"   {escape(state)}"
       )
-    await message.answer("\n".join(lines), reply_markup=_client_kb(user_id))
+    await message.answer("\n".join(lines), reply_markup=_client_kb(user_id, lang))
 
 
-async def handle_claim_start(message: Message, order_id: int) -> None:
+async def handle_claim_start(
+  message: Message,
+  order_id: int,
+  lang: str = "uz",
+  user_id: int | None = None,
+) -> None:
   """QR skaneridan /start claim_{id}."""
-  user = message.from_user
-  admin_user = is_admin(user.id if user else None)
+  actor_id = user_id if user_id is not None else (
+    message.from_user.id if message.from_user else None
+  )
+  admin_user = is_admin(actor_id)
   order, items = await _order_bundle(order_id)
-  keyboard = role_reply_keyboard(admin_user)
+  keyboard = role_reply_keyboard(admin_user, lang)
   if not order:
-    await message.answer("Buyurtma topilmadi.", reply_markup=keyboard)
+    await message.answer(t(lang, "order_not_found"), reply_markup=keyboard)
     return
 
-  if admin_user:
+  if admin_user and actor_id is not None:
     await message.answer(
-      await staff_slip(order, items),
+      await staff_slip(order, items, lang),
       reply_markup=keyboard,
     )
     if order["status"] in READY_STATUSES:
-      await confirm_delivery(message, order_id, staff_id=user.id)
+      await confirm_delivery(message, order_id, staff_id=actor_id, lang=lang)
     elif order["status"] == "delivered":
-      await message.answer(f"ℹ️ {order_code(order_id)} allaqachon topshirilgan.")
+      await message.answer(t(lang, "already_delivered", code=order_code(order_id)))
     else:
-      await message.answer(
-        "Bu buyurtma hali to'lanmagan. Topshirishdan oldin to'lovni tekshiring."
-      )
+      await message.answer(t(lang, "not_paid_yet"))
     return
 
-  if user and int(order["user_id"]) == int(user.id):
+  if actor_id is not None and int(order["user_id"]) == int(actor_id):
+    await message.answer(t(lang, "your_claim_code"), reply_markup=keyboard)
     await message.answer(
-      "Bu sizning olib ketish kodingiz. Uni 480-xona xodimiga ko'rsating.",
-      reply_markup=keyboard,
-    )
-    await message.answer(
-      customer_slip(order, items),
+      customer_slip(order, items, lang),
       reply_markup=order_slip_keyboard(
         order_id,
         ready=order["status"] in READY_STATUSES,
         pending=order["status"] == "pending",
+        lang=lang,
       ),
     )
     return
 
-  await message.answer(
-    "Bu kod faqat 480-xona xodimi uchun.",
-    reply_markup=keyboard,
-  )
+  await message.answer(t(lang, "claim_staff_only"), reply_markup=keyboard)
 
 
-async def _busy_ordering(message: Message, state: FSMContext) -> bool:
+async def _busy_ordering(message: Message, state: FSMContext, lang: str) -> bool:
   current = await state.get_state()
   if current not in {
     OrderStates.waiting_quantity.state,
@@ -280,92 +288,94 @@ async def _busy_ordering(message: Message, state: FSMContext) -> bool:
   }:
     return False
   await message.answer(
-    "⏳ Buyurtma jarayoni davom etmoqda.\n"
-    "Telefon yoki miqdorni yuboring, yoki «❌ Bekor qilish» ni bosing.",
-    reply_markup=phone_request_keyboard()
+    t(lang, "ordering_busy", cancel=t(lang, "btn_cancel")),
+    reply_markup=phone_request_keyboard(lang)
     if current == OrderStates.waiting_phone.state
-    else cancel_reply_keyboard(),
+    else cancel_reply_keyboard(lang),
   )
   return True
 
 
-@router.message(F.text == BTN_MY_ORDERS)
-async def on_my_orders(message: Message, state: FSMContext) -> None:
-  if await _busy_ordering(message, state):
+@router.message(F.text.in_(button_values("btn_orders")))
+async def on_my_orders(message: Message, state: FSMContext, lang: str) -> None:
+  if await _busy_ordering(message, state, lang):
     return
   await state.clear()
-  await show_my_orders(message, message.from_user.id)
+  await show_my_orders(message, message.from_user.id, lang)
 
 
-@router.message(F.text == BTN_PICKUP)
+@router.message(F.text.in_(button_values("btn_pickup")))
 @router.callback_query(F.data == "order:pickup")
-async def on_pickup_guide(event: Message | CallbackQuery, state: FSMContext) -> None:
+async def on_pickup_guide(
+  event: Message | CallbackQuery,
+  state: FSMContext,
+  lang: str,
+) -> None:
+  guide = t(lang, "pickup_guide", contact=PICKUP_CONTACT, phone=PICKUP_PHONE)
   if isinstance(event, CallbackQuery):
     await event.answer()
     if event.message is not None:
-      await event.message.answer(PICKUP_GUIDE)
+      await event.message.answer(guide)
     return
-  if await _busy_ordering(event, state):
+  if await _busy_ordering(event, state, lang):
     return
   await state.clear()
-  await event.answer(PICKUP_GUIDE, reply_markup=_client_kb(event.from_user.id))
+  await event.answer(guide, reply_markup=_client_kb(event.from_user.id, lang))
 
 
 @router.callback_query(F.data.startswith("order:qr:"))
-async def on_order_qr(callback: CallbackQuery) -> None:
+async def on_order_qr(callback: CallbackQuery, lang: str) -> None:
   raw = (callback.data or "").rsplit(":", 1)[-1]
   if not raw.isdigit():
-    await callback.answer("Buyurtma topilmadi.", show_alert=True)
+    await callback.answer(t(lang, "order_not_found"), show_alert=True)
     return
   order_id = int(raw)
   order, _items = await _order_bundle(order_id)
   if not order or int(order["user_id"]) != callback.from_user.id:
-    await callback.answer("⛔ Ruxsat yo'q.", show_alert=True)
+    await callback.answer(t(lang, "no_permission"), show_alert=True)
     return
   if order["status"] not in READY_STATUSES:
-    await callback.answer("QR faqat to'langan buyurtma uchun.", show_alert=True)
+    await callback.answer(t(lang, "qr_paid_only"), show_alert=True)
     return
   await callback.answer()
   png = await asyncio.to_thread(build_claim_qr_png, order_id)
   photo = BufferedInputFile(png.getvalue(), filename=png.name)
   await callback.message.answer_photo(
     photo,
-    caption=(
-      f"🏷 <b>Olib ketish kodi</b> {order_code(order_id)}\n"
-      "480-xona xodimi shu QR ni skaner qiladi."
-    ),
+    caption=t(lang, "qr_caption", code=order_code(order_id)),
   )
 
 
 @router.message(StateFilter(None), IsAdminFilter(), F.text.regexp(ORDER_CODE_RE))
-async def on_staff_lookup(message: Message) -> None:
+async def on_staff_lookup(message: Message, lang: str) -> None:
   order_id = parse_order_code(message.text)
   if order_id is None:
     return
   order, items = await _order_bundle(order_id)
   if not order:
-    await message.answer("Buyurtma topilmadi.")
+    await message.answer(t(lang, "order_not_found"))
     return
   markup = (
     deliver_order_keyboard(order_id)
     if order["status"] in READY_STATUSES
     else None
   )
-  await message.answer(await staff_slip(order, items), reply_markup=markup)
+  await message.answer(await staff_slip(order, items, lang), reply_markup=markup)
 
 
 @router.callback_query(F.data.startswith("order:deliver:"))
-async def on_staff_deliver(callback: CallbackQuery) -> None:
+async def on_staff_deliver(callback: CallbackQuery, lang: str) -> None:
   if not is_admin(callback.from_user.id):
-    await callback.answer("⛔ Ruxsat yo'q.", show_alert=True)
+    await callback.answer(t(lang, "no_permission"), show_alert=True)
     return
   raw = (callback.data or "").rsplit(":", 1)[-1]
   if not raw.isdigit() or callback.message is None:
-    await callback.answer("Buyurtma topilmadi.", show_alert=True)
+    await callback.answer(t(lang, "order_not_found"), show_alert=True)
     return
   await callback.answer()
   await confirm_delivery(
     callback.message,
     int(raw),
     staff_id=callback.from_user.id,
+    lang=lang,
   )

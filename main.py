@@ -15,7 +15,8 @@ from config import (
   SUPABASE_KEY,
   SUPABASE_URL,
 )
-from handlers import admin, client, common, orders, payment
+from handlers import admin, client, common, language, orders, payment
+from middlewares import LanguageMiddleware
 from supabase_db import init_db
 from utils.placeholders import ensure_product_images
 from utils.singleton import acquire_singleton, release_singleton
@@ -47,10 +48,15 @@ async def main() -> None:
       default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher(storage=MemoryStorage())
+    language_mw = LanguageMiddleware()
+    dp.message.middleware(language_mw)
+    dp.callback_query.middleware(language_mw)
+    dp.pre_checkout_query.middleware(language_mw)
 
-    # Tartib: to'lov, olib ketish, admin, mijoz, common
+    # Tartib: to'lov, olib ketish, til, admin, mijoz, common
     dp.include_router(payment.router)
     dp.include_router(orders.router)
+    dp.include_router(language.router)
     dp.include_router(admin.router)
     dp.include_router(client.router)
     dp.include_router(common.router)

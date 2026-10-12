@@ -42,6 +42,12 @@ CREATE TABLE IF NOT EXISTS order_items (
   color       TEXT
 );
 
+CREATE TABLE IF NOT EXISTS users (
+  user_id       BIGINT PRIMARY KEY,
+  language_code VARCHAR(5) NOT NULL DEFAULT 'uz',
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS transactions (
   id          SERIAL PRIMARY KEY,
   product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -456,7 +462,7 @@ $$;
 -- ── 6. Ruxsatlar va RLS ───────────────────────────────────
 
 GRANT SELECT, INSERT, UPDATE, DELETE
-  ON products, orders, order_items, transactions
+  ON products, orders, order_items, transactions, users
   TO anon, authenticated;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
   TO anon, authenticated;
@@ -477,11 +483,13 @@ ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "bot_products_access" ON products;
 DROP POLICY IF EXISTS "bot_orders_access" ON orders;
 DROP POLICY IF EXISTS "bot_order_items_access" ON order_items;
 DROP POLICY IF EXISTS "bot_transactions_access" ON transactions;
+DROP POLICY IF EXISTS "bot_users_access" ON users;
 
 CREATE POLICY "bot_products_access" ON products
   FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
@@ -490,4 +498,6 @@ CREATE POLICY "bot_orders_access" ON orders
 CREATE POLICY "bot_order_items_access" ON order_items
   FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 CREATE POLICY "bot_transactions_access" ON transactions
+  FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
+CREATE POLICY "bot_users_access" ON users
   FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);

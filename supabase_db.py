@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 import json
@@ -28,6 +29,8 @@ RESERVE_MARK = "\u2060RSV\u2060"
 
 _client: Client | None = None
 _carts: dict[int, dict[int, int]] = {}
+_lang_cache: dict[int, str] = {}
+_LANGS = {"uz", "ru", "en"}
 logger = logging.getLogger(__name__)
 
 
@@ -1271,3 +1274,71 @@ def get_stats() -> dict:
     ),
     "recent": recent,
   }
+
+
+def get_user_language(user_id: int) -> str:
+  """Saqlangan til. Qator yo'q bo'lsa 'uz' (hali tanlanmaganini has_user_language ajratadi)."""
+  user_id = int(user_id)
+  cached = _lang_cache.get(user_id)
+  if cached in _LANGS:
+    return cached
+  try:
+    response = (
+      _db()
+      .table("users")
+      .select("language_code")
+      .eq("user_id", user_id)
+      .limit(1)
+      .execute()
+    )
+    row = _one(response.data)
+    if not row:
+      return "uz"
+    code = str(row.get("language_code") or "uz")
+    if code not in _LANGS:
+      code = "uz"
+    _lang_cache[user_id] = code
+    return code
+  except Exception:
+    logger.warning("Foydalanuvchi tili o'qilmadi user=%s", user_id)
+    return "uz"
+
+
+def has_user_language(user_id: int) -> bool:
+  """True — til bir marta tanlangan. Jadval yo'q bo'lsa botni to'sib qo'ymaydi."""
+  user_id = int(user_id)
+  if user_id in _lang_cache:
+    return True
+  try:
+    response = (
+      _db()
+      .table("users")
+      .select("user_id")
+      .eq("user_id", user_id)
+      .limit(1)
+      .execute()
+    )
+    return _one(response.data) is not None
+  except Exception:
+    logger.exception("users jadvali o'qilmadi user=%s", user_id)
+    return False
+
+
+def set_user_language(user_id: int, lang: str) -> None:
+  """users.language_code ni yozadi. Jadval yo'q bo'lsa xato ko'taradi."""
+  user_id = int(user_id)
+  code = lang if lang in _LANGS else "uz"
+  (
+    _db()
+    .table("users")
+    .upsert(
+      {
+        "user_id": user_id,
+        "language_code": code,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+      },
+      on_conflict="user_id",
+    )
+    .execute()
+  )
+  _lang_cache[user_id] = code

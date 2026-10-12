@@ -1,8 +1,12 @@
+from html import escape
+
+import asyncio
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from config import ADMIN_IDS, SHOP_ABOUT
+from config import ADMIN_IDS
 from supabase_db import (
   add_to_cart,
   cart_details,
@@ -11,13 +15,10 @@ from supabase_db import (
   format_price,
   get_active_products,
   get_product,
+  get_user_language,
 )
 from filters.admin import is_admin
 from keyboards import (
-  BTN_ABOUT,
-  BTN_CANCEL,
-  BTN_CART,
-  BTN_CATALOG,
   cancel_inline_keyboard,
   cancel_reply_keyboard,
   cart_keyboard,
@@ -27,6 +28,7 @@ from keyboards import (
   phone_request_keyboard,
   product_buy_keyboard,
 )
+from locales import button_values, t
 from states import OrderStates
 from utils.media import replace_with_text, send_product_card
 
@@ -38,8 +40,12 @@ _ORDER_STATES = {
 }
 
 
-def _client_kb(user_id: int):
-  return client_reply_keyboard(show_admin_back=is_admin(user_id))
+def _client_kb(user_id: int, lang: str):
+  return client_reply_keyboard(show_admin_back=is_admin(user_id), lang=lang)
+
+
+def _share(lang: str) -> str:
+  return t(lang, "btn_share_phone")
 
 
 def _normalize_phone(text: str) -> str | None:
@@ -59,16 +65,15 @@ def _normalize_phone(text: str) -> str | None:
   return None
 
 
-async def _block_if_ordering(message: Message, state: FSMContext) -> bool:
+async def _block_if_ordering(message: Message, state: FSMContext, lang: str) -> bool:
   current = await state.get_state()
   if current not in _ORDER_STATES:
     return False
   await message.answer(
-    "⏳ Buyurtma jarayoni davom etmoqda.\n"
-    "Telefon/miqdorni yuboring yoki «❌ Bekor qilish» ni bosing.",
-    reply_markup=phone_request_keyboard()
+    t(lang, "ordering_busy", cancel=t(lang, "btn_cancel")),
+    reply_markup=phone_request_keyboard(lang)
     if current == OrderStates.waiting_phone.state
-    else cancel_reply_keyboard(),
+    else cancel_reply_keyboard(lang),
   )
   return True
 
@@ -76,51 +81,40 @@ async def _block_if_ordering(message: Message, state: FSMContext) -> bool:
 # ── Reply menyu ────────────────────────────────────────────
 
 
-@router.message(F.text == BTN_CATALOG)
-async def show_catalog(message: Message, state: FSMContext) -> None:
-  if await _block_if_ordering(message, state):
+@router.message(F.text.in_(button_values("btn_catalog")))
+async def show_catalog(message: Message, state: FSMContext, lang: str) -> None:
+  if await _block_if_ordering(message, state, lang):
     return
   await state.clear()
   products = get_active_products()
   await message.answer(
-    "🛍 <b>Katalog</b>",
-    reply_markup=_client_kb(message.from_user.id),
+    t(lang, "catalog_title"),
+    reply_markup=_client_kb(message.from_user.id, lang),
   )
   if not products:
-    await message.answer("Hozircha sotuvda mahsulot yo'q.")
+    await message.answer(t(lang, "catalog_empty"))
     return
   await message.answer(
-    "Mavjud mahsulotni tanlang:",
-    reply_markup=catalog_keyboard(products),
+    t(lang, "catalog_pick"),
+    reply_markup=catalog_keyboard(products, lang),
   )
 
 
-@router.message(F.text == BTN_CART)
-async def show_cart(message: Message, state: FSMContext) -> None:
-  if await _block_if_ordering(message, state):
+@router.message(F.text.in_(button_values("btn_cart")))
+async def show_cart(message: Message, state: FSMContext, lang: str) -> None:
+  if await _block_if_ordering(message, state, lang):
     return
   await state.clear()
-  await _send_cart(message, message.from_user.id)
+  await _send_cart(message, message.from_user.id, lang)
 
 
-@router.message(F.text == BTN_ABOUT)
-async def show_about(message: Message, state: FSMContext) -> None:
-  if await _block_if_ordering(message, state):
-    return
+@router.message(OrderStates.waiting_quantity, F.text.in_(button_values("btn_cancel")))
+@router.message(OrderStates.waiting_phone, F.text.in_(button_values("btn_cancel")))
+async def cancel_order_flow(message: Message, state: FSMContext, lang: str) -> None:
   await state.clear()
   await message.answer(
-    SHOP_ABOUT,
-    reply_markup=_client_kb(message.from_user.id),
-  )
-
-
-@router.message(OrderStates.waiting_quantity, F.text == BTN_CANCEL)
-@router.message(OrderStates.waiting_phone, F.text == BTN_CANCEL)
-async def cancel_order_flow(message: Message, state: FSMContext) -> None:
-  await state.clear()
-  await message.answer(
-    "❌ Buyurtma bekor qilindi.",
-    reply_markup=_client_kb(message.from_user.id),
+    t(lang, "order_cancelled"),
+    reply_markup=_client_kb(message.from_user.id, lang),
   )
 
 
@@ -128,80 +122,85 @@ async def cancel_order_flow(message: Message, state: FSMContext) -> None:
 
 
 @router.callback_query(F.data == "client:catalog")
-async def cb_catalog(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_catalog(callback: CallbackQuery, state: FSMContext, lang: str) -> None:
   await state.clear()
   await callback.answer()
   products = get_active_products()
   if not products:
-    await replace_with_text(
-      callback.message,
-      "🛍 Hozircha sotuvda mahsulot yo'q.",
-    )
+    await replace_with_text(callback.message, t(lang, "catalog_empty"))
     return
   await replace_with_text(
     callback.message,
-    "🛍 <b>Katalog</b>\n\nMavjud mahsulotni tanlang:",
-    catalog_keyboard(products),
+    t(lang, "catalog_body"),
+    catalog_keyboard(products, lang),
   )
 
 
 @router.callback_query(F.data.startswith("client:product:"))
-async def cb_product(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_product(callback: CallbackQuery, state: FSMContext, lang: str) -> None:
   await state.clear()
   product_id = int(callback.data.split(":")[2])
   product = get_product(product_id)
   if not product or not product["is_active"] or product["quantity"] <= 0:
-    await callback.answer("Mahsulot mavjud emas.", show_alert=True)
+    await callback.answer(t(lang, "product_unavailable"), show_alert=True)
     return
   await callback.answer()
   await send_product_card(
     callback.message,
     product,
-    product_buy_keyboard(product_id),
+    product_buy_keyboard(product_id, lang),
   )
 
 
 @router.callback_query(F.data.startswith("client:addtocart1:"))
-async def cb_add_cart_one(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_add_cart_one(callback: CallbackQuery, state: FSMContext, lang: str) -> None:
   product_id = int(callback.data.split(":")[2])
   product = get_product(product_id)
   if not product or not product["is_active"] or product["quantity"] <= 0:
-    await callback.answer("Mahsulot mavjud emas.", show_alert=True)
+    await callback.answer(t(lang, "product_unavailable"), show_alert=True)
     return
   add_to_cart(callback.from_user.id, product_id, 1)
-  await callback.answer("Savatga qo'shildi ✅")
+  await callback.answer(t(lang, "added_toast"))
   await state.clear()
   await callback.message.answer(
-    f"✅ Savatga qo'shildi: <b>{product['name']}</b> × 1\n"
-    "Yana mahsulot qo'shing yoki «🛒 Savat» orqali bitta buyurtma qiling.",
-    reply_markup=_client_kb(callback.from_user.id),
+    t(
+      lang,
+      "added_hint",
+      name=escape(str(product["name"])),
+      cart=t(lang, "btn_cart"),
+    ),
+    reply_markup=_client_kb(callback.from_user.id, lang),
   )
 
 
 @router.callback_query(F.data.startswith("client:buy1:"))
-async def cb_buy_one(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_buy_one(callback: CallbackQuery, state: FSMContext, lang: str) -> None:
   product_id = int(callback.data.split(":")[2])
   product = get_product(product_id)
   if not product or not product["is_active"] or product["quantity"] <= 0:
-    await callback.answer("Mahsulot mavjud emas.", show_alert=True)
+    await callback.answer(t(lang, "product_unavailable"), show_alert=True)
     return
   await callback.answer()
   await state.set_state(OrderStates.waiting_phone)
   await state.update_data(mode="buynow", product_id=product_id, buynow_qty=1)
   await callback.message.answer(
-    f"⚡️ <b>Buyurtma:</b> {product['name']} × 1\n"
-    f"💰 {format_price(product['price'])}\n\n"
-    "📞 Telefon raqamingizni yuboring yoki tugmani bosing:",
-    reply_markup=phone_request_keyboard(),
+    t(
+      lang,
+      "order_line",
+      name=escape(str(product["name"])),
+      qty=1,
+      price=format_price(product["price"]),
+    ),
+    reply_markup=phone_request_keyboard(lang),
   )
 
 
 @router.callback_query(F.data.startswith("client:addcart:"))
-async def cb_add_cart(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_add_cart(callback: CallbackQuery, state: FSMContext, lang: str) -> None:
   product_id = int(callback.data.split(":")[2])
   product = get_product(product_id)
   if not product or not product["is_active"] or product["quantity"] <= 0:
-    await callback.answer("Mahsulot mavjud emas.", show_alert=True)
+    await callback.answer(t(lang, "product_unavailable"), show_alert=True)
     return
 
   await callback.answer()
@@ -209,19 +208,22 @@ async def cb_add_cart(callback: CallbackQuery, state: FSMContext) -> None:
   await state.update_data(mode="cart", product_id=product_id)
   await replace_with_text(
     callback.message,
-    f"🛒 <b>{product['name']}</b>\n"
-    f"Qoldiq: <b>{product['quantity']}</b> dona\n\n"
-    "Nechta dona qo'shiladi? Raqam kiriting:",
-    cancel_inline_keyboard(),
+    t(
+      lang,
+      "stock_left",
+      name=escape(str(product["name"])),
+      qty=product["quantity"],
+    ),
+    cancel_inline_keyboard(lang),
   )
 
 
 @router.callback_query(F.data.startswith("client:buynow:"))
-async def cb_buy_now(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_buy_now(callback: CallbackQuery, state: FSMContext, lang: str) -> None:
   product_id = int(callback.data.split(":")[2])
   product = get_product(product_id)
   if not product or not product["is_active"] or product["quantity"] <= 0:
-    await callback.answer("Mahsulot mavjud emas.", show_alert=True)
+    await callback.answer(t(lang, "product_unavailable"), show_alert=True)
     return
 
   await callback.answer()
@@ -229,21 +231,23 @@ async def cb_buy_now(callback: CallbackQuery, state: FSMContext) -> None:
   await state.update_data(mode="buynow", product_id=product_id)
   await replace_with_text(
     callback.message,
-    f"⚡️ <b>Tezkor buyurtma</b>\n"
-    f"Mahsulot: <b>{product['name']}</b>\n"
-    f"Qoldiq: <b>{product['quantity']}</b> dona\n\n"
-    "Nechta dona kerak? Raqam kiriting:",
-    cancel_inline_keyboard(),
+    t(
+      lang,
+      "buy_qty_prompt",
+      name=escape(str(product["name"])),
+      qty=product["quantity"],
+    ),
+    cancel_inline_keyboard(lang),
   )
 
 
 @router.message(OrderStates.waiting_quantity, F.text)
-async def process_quantity(message: Message, state: FSMContext) -> None:
+async def process_quantity(message: Message, state: FSMContext, lang: str) -> None:
   text = (message.text or "").strip()
   if not text.isdigit() or int(text) <= 0:
     await message.answer(
-      "❌ Musbat butun son kiriting:",
-      reply_markup=cancel_reply_keyboard(),
+      t(lang, "bad_qty"),
+      reply_markup=cancel_reply_keyboard(lang),
     )
     return
 
@@ -256,16 +260,15 @@ async def process_quantity(message: Message, state: FSMContext) -> None:
   if not product or not product["is_active"]:
     await state.clear()
     await message.answer(
-      "Mahsulot topilmadi.",
-      reply_markup=_client_kb(message.from_user.id),
+      t(lang, "product_missing"),
+      reply_markup=_client_kb(message.from_user.id, lang),
     )
     return
 
   if quantity > product["quantity"]:
     await message.answer(
-      f"❌ Omborda faqat <b>{product['quantity']}</b> dona bor.\n"
-      "Kamroq miqdor kiriting:",
-      reply_markup=cancel_reply_keyboard(),
+      t(lang, "not_enough_stock", qty=product["quantity"]),
+      reply_markup=cancel_reply_keyboard(lang),
     )
     return
 
@@ -273,52 +276,63 @@ async def process_quantity(message: Message, state: FSMContext) -> None:
     add_to_cart(message.from_user.id, product_id, quantity)
     await state.clear()
     await message.answer(
-      f"✅ Savatga qo'shildi: <b>{product['name']}</b> × {quantity}",
-      reply_markup=_client_kb(message.from_user.id),
+      t(lang, "added_named", name=escape(str(product["name"])), qty=quantity),
+      reply_markup=_client_kb(message.from_user.id, lang),
     )
-    await _send_cart(message, message.from_user.id)
+    await _send_cart(message, message.from_user.id, lang)
     return
 
-  # Tezkor buyurtma — telefon so'rash
   await state.update_data(buynow_qty=quantity)
   await state.set_state(OrderStates.waiting_phone)
   await message.answer(
-    "📞 Telefon raqamingizni yuboring yoki «📱 Raqamni ulashish» ni bosing\n"
-    "(masalan: +998901234567):",
-    reply_markup=phone_request_keyboard(),
+    t(lang, "ask_phone", share=_share(lang)),
+    reply_markup=phone_request_keyboard(lang),
   )
 
 
 @router.callback_query(F.data == "client:clearcart")
-async def cb_clear_cart(callback: CallbackQuery) -> None:
+async def cb_clear_cart(callback: CallbackQuery, lang: str) -> None:
   clear_cart(callback.from_user.id)
-  await callback.answer("Savat tozalandi.")
+  await callback.answer(t(lang, "cart_cleared_toast"))
   await replace_with_text(
     callback.message,
-    "🛒 Savat bo'sh.",
-    cart_keyboard(False),
+    t(lang, "cart_empty_short"),
+    cart_keyboard(False, lang),
   )
 
 
 @router.callback_query(F.data == "client:checkout")
-async def cb_checkout(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_checkout(callback: CallbackQuery, state: FSMContext, lang: str) -> None:
   items, total = cart_details(callback.from_user.id)
   if not items:
-    await callback.answer("Savat bo'sh.", show_alert=True)
+    await callback.answer(t(lang, "cart_empty_alert"), show_alert=True)
     return
 
   await callback.answer()
   await state.set_state(OrderStates.waiting_phone)
   await state.update_data(mode="cart_checkout")
   await callback.message.answer(
-    f"✅ Buyurtma summasi: <b>{format_price(total)}</b>\n"
-    f"🛍 {len(items)} xil mahsulot\n\n"
-    "📞 Telefon raqamingizni yuboring yoki «📱 Raqamni ulashish» ni bosing:",
-    reply_markup=phone_request_keyboard(),
+    t(
+      lang,
+      "checkout_intro",
+      total=format_price(total),
+      count=len(items),
+      share=_share(lang),
+    ),
+    reply_markup=phone_request_keyboard(lang),
   )
 
 
-async def _finalize_order(message: Message, state: FSMContext, phone: str) -> None:
+async def _notify_admins(bot, text_key: str, **kwargs: object) -> None:
+  for admin_id in ADMIN_IDS:
+    try:
+      admin_lang = await asyncio.to_thread(get_user_language, admin_id)
+      await bot.send_message(admin_id, t(admin_lang, text_key, **kwargs))
+    except Exception:
+      pass
+
+
+async def _finalize_order(message: Message, state: FSMContext, phone: str, lang: str) -> None:
   data = await state.get_data()
   mode = data.get("mode")
   user = message.from_user
@@ -336,15 +350,15 @@ async def _finalize_order(message: Message, state: FSMContext, phone: str) -> No
     if not product or not qty:
       await state.clear()
       await message.answer(
-        "Xatolik. Qaytadan boshlang.",
-        reply_markup=_client_kb(user.id),
+        t(lang, "restart_error"),
+        reply_markup=_client_kb(user.id, lang),
       )
       return
     if product["quantity"] < qty:
       await state.clear()
       await message.answer(
-        f"❌ Qoldiq yetarli emas ({product['quantity']} dona).",
-        reply_markup=_client_kb(user.id),
+        t(lang, "stock_short", qty=product["quantity"]),
+        reply_markup=_client_kb(user.id, lang),
       )
       return
     order_items = [
@@ -359,8 +373,8 @@ async def _finalize_order(message: Message, state: FSMContext, phone: str) -> No
     if not details:
       await state.clear()
       await message.answer(
-        "🛒 Savat bo'sh. Avval katalogdan mahsulot qo'shing.",
-        reply_markup=_client_kb(user.id),
+        t(lang, "cart_empty_long"),
+        reply_markup=_client_kb(user.id, lang),
       )
       return
     order_items = [
@@ -377,8 +391,8 @@ async def _finalize_order(message: Message, state: FSMContext, phone: str) -> No
   except Exception as error:
     await state.clear()
     await message.answer(
-      f"❌ Buyurtma yaratilmadi: {error}",
-      reply_markup=_client_kb(user.id),
+      t(lang, "order_failed_error", error=escape(str(error))),
+      reply_markup=_client_kb(user.id, lang),
     )
     return
 
@@ -386,8 +400,8 @@ async def _finalize_order(message: Message, state: FSMContext, phone: str) -> No
 
   if not order:
     await message.answer(
-      "❌ Buyurtma yaratilmadi. Qoldiqni tekshirib, qayta urinib ko'ring.",
-      reply_markup=_client_kb(user.id),
+      t(lang, "order_failed_stock"),
+      reply_markup=_client_kb(user.id, lang),
     )
     return
 
@@ -395,13 +409,15 @@ async def _finalize_order(message: Message, state: FSMContext, phone: str) -> No
     clear_cart(user.id)
 
   await message.answer(
-    f"✅ <b>Buyurtma yaratildi!</b>\n\n"
-    f"🆔 Raqam: <b>#{order['id']}</b>\n"
-    f"🛍 Mahsulotlar: <b>{len(order_items)}</b> qator\n"
-    f"💰 Summa: <b>{format_price(order['total_price'])}</b>\n"
-    f"📞 Tel: <b>{phone}</b>\n"
-    f"⏳ Holat: <b>To'lov kutilmoqda</b>",
-    reply_markup=_client_kb(user.id),
+    t(
+      lang,
+      "order_created",
+      order_id=order["id"],
+      rows=len(order_items),
+      total=format_price(order["total_price"]),
+      phone=escape(phone),
+    ),
+    reply_markup=_client_kb(user.id, lang),
   )
 
   from handlers.payment import available_providers, send_order_invoice
@@ -416,52 +432,48 @@ async def _finalize_order(message: Message, state: FSMContext, phone: str) -> No
         message.chat.id,
         order,
         provider=code,
-        intro_text=f"💳 {label} orqali to'lovni yakunlang:",
+        intro_text=t(lang, "pay_finish", label=label),
+        lang=lang,
       )
       if not sent:
         await message.answer(
-          "Invoys ochilmadi. Qayta urinib ko'ring:",
-          reply_markup=pay_order_keyboard(order_id),
+          t(lang, "invoice_not_opened"),
+          reply_markup=pay_order_keyboard(order_id, lang),
         )
     elif providers:
       await message.answer(
-        "💳 To'lov usulini tanlang:",
-        reply_markup=pay_order_keyboard(order_id),
+        t(lang, "choose_payment"),
+        reply_markup=pay_order_keyboard(order_id, lang),
       )
     else:
       await message.answer(
-        "⚠️ Onlayn to'lov vaqtincha o'chirilgan. Admin tasdiqlashini kuting.",
-        reply_markup=_client_kb(user.id),
+        t(lang, "payments_off"),
+        reply_markup=_client_kb(user.id, lang),
       )
   except Exception as error:
     await message.answer(
-      f"⚠️ Buyurtma saqlandi, lekin to'lov oynasi ochilmadi.\n{error}",
-      reply_markup=pay_order_keyboard(order_id),
+      t(lang, "invoice_saved_failed", error=escape(str(error))),
+      reply_markup=pay_order_keyboard(order_id, lang),
     )
 
-  notify = (
-    f"🔔 <b>Yangi buyurtma #{order['id']}</b>\n"
-    f"👤 {user_name}\n"
-    f"📞 {phone}\n"
-    f"🛍 {len(order_items)} qator\n"
-    f"💰 {format_price(order['total_price'])}\n"
-    f"💳 To'lov: kutilmoqda\n\n"
-    "Tasdiqlash: «📋 Yangi buyurtmalar»"
+  await _notify_admins(
+    message.bot,
+    "admin_new_order",
+    order_id=order["id"],
+    name=escape(user_name),
+    phone=escape(phone),
+    rows=len(order_items),
+    total=format_price(order["total_price"]),
   )
-  for admin_id in ADMIN_IDS:
-    try:
-      await message.bot.send_message(admin_id, notify)
-    except Exception:
-      pass
 
 
 @router.message(OrderStates.waiting_phone, F.contact)
-async def process_phone_contact(message: Message, state: FSMContext) -> None:
+async def process_phone_contact(message: Message, state: FSMContext, lang: str) -> None:
   contact = message.contact
   if not contact or not contact.phone_number:
     await message.answer(
-      "❌ Telefon olinmadi. Qayta yuboring:",
-      reply_markup=phone_request_keyboard(),
+      t(lang, "phone_missing"),
+      reply_markup=phone_request_keyboard(lang),
     )
     return
   phone = contact.phone_number.strip()
@@ -470,67 +482,70 @@ async def process_phone_contact(message: Message, state: FSMContext) -> None:
   normalized = _normalize_phone(phone)
   if not normalized:
     await message.answer(
-      "❌ Telefon raqam noto'g'ri. Qayta yuboring:",
-      reply_markup=phone_request_keyboard(),
+      t(lang, "phone_bad"),
+      reply_markup=phone_request_keyboard(lang),
     )
     return
-  await _finalize_order(message, state, normalized)
+  await _finalize_order(message, state, normalized, lang)
 
 
 @router.message(OrderStates.waiting_phone, F.text)
-async def process_phone(message: Message, state: FSMContext) -> None:
+async def process_phone(message: Message, state: FSMContext, lang: str) -> None:
   phone = _normalize_phone(message.text or "")
   if not phone:
     await message.answer(
-      "❌ Telefon raqam noto'g'ri. Qayta yuboring\n"
-      "yoki «📱 Raqamni ulashish» ni bosing:",
-      reply_markup=phone_request_keyboard(),
+      t(lang, "phone_bad_share", share=_share(lang)),
+      reply_markup=phone_request_keyboard(lang),
     )
     return
-  await _finalize_order(message, state, phone)
+  await _finalize_order(message, state, phone, lang)
 
 
 @router.callback_query(F.data == "client:cancel")
-async def cb_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_cancel(callback: CallbackQuery, state: FSMContext, lang: str) -> None:
   await state.clear()
-  await callback.answer("Bekor qilindi.")
-  await replace_with_text(callback.message, "❌ Bekor qilindi.")
+  await callback.answer(t(lang, "cancelled"))
+  await replace_with_text(callback.message, t(lang, "cancelled"))
 
 
 @router.message(OrderStates.waiting_quantity)
-async def quantity_hint(message: Message) -> None:
+async def quantity_hint(message: Message, lang: str) -> None:
   await message.answer(
-    "🔢 Miqdorni raqam bilan yozing:",
-    reply_markup=cancel_reply_keyboard(),
+    t(lang, "qty_hint"),
+    reply_markup=cancel_reply_keyboard(lang),
   )
 
 
 @router.message(OrderStates.waiting_phone)
-async def phone_hint(message: Message) -> None:
+async def phone_hint(message: Message, lang: str) -> None:
   await message.answer(
-    "📞 Telefon raqamni yuboring yoki «📱 Raqamni ulashish» ni bosing:",
-    reply_markup=phone_request_keyboard(),
+    t(lang, "phone_hint", share=_share(lang)),
+    reply_markup=phone_request_keyboard(lang),
   )
 
 
-async def _send_cart(message: Message, user_id: int) -> None:
+async def _send_cart(message: Message, user_id: int, lang: str) -> None:
   items, total = cart_details(user_id)
-  await message.answer("🛒 <b>Savat</b>", reply_markup=_client_kb(user_id))
+  await message.answer(
+    t(lang, "cart_title"),
+    reply_markup=_client_kb(user_id, lang),
+  )
   if not items:
     await message.answer(
-      "Savat bo'sh. Mahsulot qo'shish uchun katalogga o'ting.",
-      reply_markup=cart_keyboard(False),
+      t(lang, "cart_empty_hint"),
+      reply_markup=cart_keyboard(False, lang),
     )
     return
 
   lines = []
   for row in items:
-    p = row["product"]
+    product = row["product"]
     lines.append(
-      f"• {p['name']} × {row['quantity']} = {format_price(row['line_total'])}"
+      f"• {escape(str(product['name']))} × {row['quantity']} = "
+      f"{format_price(row['line_total'])}"
     )
-  lines.append(f"\n💰 Jami: <b>{format_price(total)}</b>")
+  lines.append(t(lang, "cart_total", total=format_price(total)))
   await message.answer(
     "\n".join(lines),
-    reply_markup=cart_keyboard(True),
+    reply_markup=cart_keyboard(True, lang),
   )

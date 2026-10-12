@@ -1,3 +1,3 @@
-from handlers import admin, client, common, orders, payment
+from handlers import admin, client, common, language, orders, payment
 
-__all__ = ["admin", "client", "common", "orders", "payment"]
+__all__ = ["admin", "client", "common", "language", "orders", "payment"]
